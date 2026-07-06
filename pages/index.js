@@ -4,7 +4,7 @@ export default function Home() {
   return (
     <>
       <Navbar />
-      <h1>Community Home</h1>
+      <h1>rgomassenger Home</h1>
       <p>আজ রাত ১২টা থেকে সার্ভার মেইনটেন্যান্স হবে।</p>
     </>
   );
