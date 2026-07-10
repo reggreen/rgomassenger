@@ -12,6 +12,7 @@ drop table if exists billing cascade;
 drop table if exists events cascade;
 drop table if exists discussion cascade;
 drop table if exists support cascade;
+drop table if exists tasks cascade;
 
 -- ১. messages টেবিল (চ্যাট রুমের জন্য)
 create table messages (
@@ -41,6 +42,7 @@ create table events (
   date timestamp with time zone not null,
   location text not null,
   description text,
+  priority text default 'মাঝারি',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -67,9 +69,24 @@ create table support (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- ৬. tasks টেবিল (টাস্ক ও রিমাইন্ডারের জন্য)
+create table tasks (
+  id uuid default gen_random_uuid() primary key,
+  title text not null,
+  description text,
+  category text,
+  due_date timestamp with time zone not null,
+  email text,
+  channels text default 'Both',
+  priority text default 'মাঝারি',
+  status text default 'Pending',
+  alerted boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- সুপাবেস রিয়েল-টাইম সক্রিয় করার জন্য নিচের কাজগুলো করুন:
 -- Supabase Dashboard > Database > Replication > 'supabase_realtime' পাবলিকেশন এডিট করে
--- messages, billing, events, discussion, support টেবিলগুলো যুক্ত করুন।
+-- messages, billing, events, discussion, support, tasks টেবিলগুলো যুক্ত করুন।
 `;
 
   const copyToClipboard = (text, id) => {

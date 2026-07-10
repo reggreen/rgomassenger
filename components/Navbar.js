@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { MessageSquare, CreditCard, Calendar, MessageCircle, HelpCircle } from 'lucide-react';
+import { MessageSquare, CreditCard, Calendar, MessageCircle, HelpCircle, Bell } from 'lucide-react';
 
 export default function Navbar() {
   const router = useRouter();
 
   const navItems = [
     { name: 'চ্যাট রুম (Home)', href: '/', icon: MessageSquare },
+    { name: 'টাস্ক নোটিফিকেশন (Tasks)', href: '/tasks', icon: Bell },
     { name: 'বিলিং / ফান্ড (Billing)', href: '/billing', icon: CreditCard },
     { name: 'ফোরাম (Discussion)', href: '/discussion', icon: MessageCircle },
     { name: 'ইভেন্টস (Events)', href: '/events', icon: Calendar },

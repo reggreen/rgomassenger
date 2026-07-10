@@ -1,6 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle } from 'lucide-react';
+import { supabase, sendTypingStatus } from '../lib/supabase';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon } from 'lucide-react';
+
+const PRESET_AVATARS = [
+  { id: 'av-1', emoji: '🧑‍💻', bg: 'from-blue-600 to-indigo-600', label: 'কোডার' },
+  { id: 'av-2', emoji: '👩‍🎨', bg: 'from-pink-500 to-rose-500', label: 'ডিজাইনার' },
+  { id: 'av-3', emoji: '🦁', bg: 'from-amber-500 to-orange-500', label: 'সিংহ' },
+  { id: 'av-4', emoji: '🦄', bg: 'from-purple-500 to-indigo-500', label: 'ইউনিকর্ন' },
+  { id: 'av-5', emoji: '🦊', bg: 'from-orange-400 to-amber-600', label: 'শেয়াল' },
+  { id: 'av-6', emoji: '🐼', bg: 'from-emerald-500 to-teal-600', label: 'পান্ডা' },
+  { id: 'av-7', emoji: '🚀', bg: 'from-cyan-500 to-blue-500', label: 'রকেট' },
+  { id: 'av-8', emoji: '🍿', bg: 'from-red-500 to-yellow-500', label: 'পপকর্ন' }
+];
+
+const getAvatarForUsername = (name) => {
+  if (!name) return PRESET_AVATARS[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % PRESET_AVATARS.length;
+  return PRESET_AVATARS[index];
+};
 
 const CHANNELS = [
   { id: 'general', name: 'সাধারণ আলোচনা (General)', desc: 'কমিউনিটির সবার সাথে সাধারণ কুশল বিনিময়' },
@@ -14,6 +35,133 @@ const PRESET_NAMES = [
   'জাহিদ হাসান', 'নাবিলা আনজুম', 'রাফসান আহমেদ', 'মাহমুদ বিল্লাহ', 'ফারহান চৌধুরী'
 ];
 
+const getLinkPreview = (text) => {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/;
+  const match = text.match(urlRegex);
+  if (!match) return null;
+  
+  const url = match[0];
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch (e) {
+    hostname = url;
+  }
+  
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return {
+      url,
+      title: 'YouTube - ভিডিও শেয়ারিং প্ল্যাটফর্ম 🎥',
+      description: 'ইউটিউবে আপনার প্রিয় গান, নাটক, সিনেমা এবং টিউটোরিয়ালগুলো দেখুন ও উপভোগ করুন।',
+      siteName: 'youtube.com',
+      image: 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&w=600&q=80',
+    };
+  }
+  if (url.includes('github.com')) {
+    return {
+      url,
+      title: 'GitHub: Let\'s build from here 💻',
+      description: 'বিশ্বের বৃহত্তম ডেভেলপার প্ল্যাটফর্ম। কোড শেয়ারিং, ভার্সন কন্ট্রোল এবং ওপেন সোর্স প্রজেক্টের আড্ডাঘর।',
+      siteName: 'github.com',
+      image: 'https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&w=600&q=80',
+    };
+  }
+  if (url.includes('google.com')) {
+    return {
+      url,
+      title: 'Google Search Engine 🔍',
+      description: 'গুগল সার্চ ইঞ্জিন। যেকোনো তথ্যের জন্য বিশ্বের সবচেয়ে জনপ্রিয় এবং দ্রুততম সার্চ প্ল্যাটফর্ম।',
+      siteName: 'google.com',
+      image: 'https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?auto=format&fit=crop&w=600&q=80',
+    };
+  }
+  if (url.includes('facebook.com')) {
+    return {
+      url,
+      title: 'Facebook - সোশ্যাল নেটওয়ার্ক 👥',
+      description: 'ফেসবুকে বন্ধুদের সাথে যুক্ত হোন, ছবি ও পোস্ট শেয়ার করুন এবং নতুন নতুন মানুষের সাথে পরিচিত হোন।',
+      siteName: 'facebook.com',
+      image: 'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=600&q=80',
+    };
+  }
+  if (url.includes('wikipedia.org')) {
+    return {
+      url,
+      title: 'Wikipedia, the free encyclopedia 📖',
+      description: 'উইকিপিডিয়া - একটি মুক্ত বিশ্বকোষ। বিশ্বের সকল বিষয়ের উপর নির্ভরযোগ্য ও বিস্তারিত তথ্যভান্ডার।',
+      siteName: 'wikipedia.org',
+      image: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=600&q=80',
+    };
+  }
+  
+  return {
+    url,
+    title: `${hostname} - ওয়েবসাইট লিংক 🔗`,
+    description: `এই লিংকে ক্লিক করে ${hostname} ওয়েবসাইটটি ভিজিট করুন। বিস্তারিত জানতে ক্লিক করুন।`,
+    siteName: hostname,
+    image: 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?auto=format&fit=crop&w=600&q=80',
+  };
+};
+
+const renderMessageText = (text) => {
+  if (!text) return '';
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, i) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a 
+          key={i} 
+          href={part} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-cyan-400 hover:text-cyan-300 underline break-all font-medium inline-flex items-center gap-1 hover:brightness-110 transition"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <LinkIcon className="w-3.5 h-3.5 inline flex-shrink-0" />
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+};
+
+const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 export default function Home() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -23,21 +171,45 @@ export default function Home() {
   const [activeRoom, setActiveRoom] = useState('general');
   const [isSending, setIsSending] = useState(false);
   const [dbError, setDbError] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [deletingMessageId, setDeletingMessageId] = useState(null);
+  const [replyingToMessage, setReplyingToMessage] = useState(null);
+  const [typingUsers, setTypingUsers] = useState({});
+  const [selectedAvatarId, setSelectedAvatarId] = useState('av-1');
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   
-  const messagesEndRef = useRef(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const fileInputRef = useRef(null);
 
-  // Initialize nickname
+  const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const [isTypingState, setIsTypingState] = useState(false);
+
+  // Initialize nickname and avatar
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('rg_username');
+      let currentUsername = '';
       if (saved) {
         setUsername(saved);
         setTempUsername(saved);
+        currentUsername = saved;
       } else {
         const randomName = PRESET_NAMES[Math.floor(Math.random() * PRESET_NAMES.length)] + ' (নতুন)';
         setUsername(randomName);
         setTempUsername(randomName);
         localStorage.setItem('rg_username', randomName);
+        currentUsername = randomName;
+      }
+
+      const savedAvatar = localStorage.getItem('rg_avatar_id');
+      if (savedAvatar) {
+        setSelectedAvatarId(savedAvatar);
+      } else {
+        const defaultAv = getAvatarForUsername(currentUsername);
+        setSelectedAvatarId(defaultAv.id);
+        localStorage.setItem('rg_avatar_id', defaultAv.id);
       }
     }
   }, []);
@@ -77,66 +249,247 @@ export default function Home() {
 
     fetchMessages();
 
-    // 2. Subscribe to new messages (Supabase Replication)
+    // 2. Subscribe to new, updated, and deleted messages (Supabase Replication)
     const subscription = supabase
       .channel('public:messages')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
+        { event: '*', schema: 'public', table: 'messages' },
         (payload) => {
-          if (active && payload.new && payload.new.room === activeRoom) {
-            setMessages((prev) => {
-              // Avoid duplicate messages
-              if (prev.some(msg => msg.id === payload.new.id)) return prev;
-              return [...prev, payload.new];
-            });
+          if (!active) return;
+
+          const eventType = payload.eventType || payload.event;
+
+          if (eventType === 'INSERT') {
+            if (payload.new && payload.new.room === activeRoom) {
+              setMessages((prev) => {
+                // Avoid duplicate messages
+                if (prev.some(msg => msg.id === payload.new.id)) return prev;
+                return [...prev, payload.new];
+              });
+            }
+          } else if (eventType === 'UPDATE') {
+            if (payload.new && payload.new.room === activeRoom) {
+              setMessages((prev) =>
+                prev.map((msg) => (msg.id === payload.new.id ? payload.new : msg))
+              );
+            }
+          } else if (eventType === 'DELETE') {
+            const deletedId = payload.old?.id || payload.old_id || (payload.new ? payload.new.id : null);
+            if (deletedId) {
+              setMessages((prev) => prev.filter((msg) => msg.id !== deletedId));
+            }
+          } else if (eventType === 'TYPING') {
+            if (payload.room === activeRoom && payload.sender !== username) {
+              setTypingUsers((prev) => ({
+                ...prev,
+                [payload.sender]: payload.isTyping
+              }));
+            }
           }
         }
       )
       .subscribe();
 
+    // Reset typing status on room switch
+    setTypingUsers({});
+
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, [activeRoom]);
+  }, [activeRoom, username]);
 
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!inputText.trim() || isSending) return;
+  const scrollToMessage = (msgId) => {
+    const element = document.getElementById(`msg-${msgId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add('bg-blue-600/20');
+      setTimeout(() => {
+        element.classList.remove('bg-blue-600/20');
+      }, 1500);
+    }
+  };
 
-    setIsSending(true);
-    const newMsg = {
-      room: activeRoom,
-      sender: username,
-      content: inputText.trim(),
-    };
+  const handleReplyTo = (msg) => {
+    setReplyingToMessage(msg);
+    setEditingMessage(null); // Cancel edit if replying
+  };
 
+  const handleCancelReply = () => {
+    setReplyingToMessage(null);
+  };
+
+  const handleStartEdit = (msg) => {
+    setEditingMessage(msg);
+    setReplyingToMessage(null); // Cancel reply if editing
+    
+    // Parse JSON if it has reply metadata
+    let text = msg.content;
+    if (msg.content.startsWith('{"text":')) {
+      try {
+        const parsed = JSON.parse(msg.content);
+        text = parsed.text;
+      } catch (e) {}
+    }
+    setInputText(text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const handleDeleteMessage = async (msgId) => {
     try {
-      const { data, error } = await supabase.from('messages').insert(newMsg);
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('id', msgId);
+
       if (error) {
-        console.error('Error sending message:', error);
+        console.error('Error deleting message:', error);
         setDbError(error);
       } else {
         setDbError(null);
-        setInputText('');
-        // Optimistic local update for instantaneous experience (if mock is used, handles this inside insert)
-        if (data) {
-          setMessages((prev) => {
-            if (prev.some(msg => msg.id === data[0].id)) return prev;
-            return [...prev, data[0]];
-          });
-        }
+        // Optimistic local update
+        setMessages((prev) => prev.filter(m => m.id !== msgId));
       }
     } catch (err) {
-      console.error('Send error:', err);
+      console.error('Delete error:', err);
     } finally {
-      setIsSending(false);
+      setDeletingMessageId(null);
+    }
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if ((!inputText.trim() && !selectedImage) || isSending) return;
+
+    setIsSending(true);
+
+    // Turn off typing status
+    setIsTypingState(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    sendTypingStatus(activeRoom, username, false);
+
+    if (editingMessage) {
+      // Message Editing Mode
+      let newContent = inputText.trim();
+      let replyTo = null;
+      let existingImage = null;
+      if (editingMessage.content.startsWith('{"text":')) {
+        try {
+          const parsed = JSON.parse(editingMessage.content);
+          replyTo = parsed.replyTo;
+          existingImage = parsed.image;
+        } catch (e) {}
+      }
+
+      newContent = JSON.stringify({
+        text: inputText.trim(),
+        replyTo: replyTo,
+        edited: true,
+        avatar: selectedAvatarId,
+        image: existingImage // keep the original image when editing text
+      });
+
+      try {
+        const { error } = await supabase
+          .from('messages')
+          .update({ content: newContent })
+          .eq('id', editingMessage.id);
+
+        if (error) {
+          console.error('Error updating message:', error);
+          setDbError(error);
+        } else {
+          setDbError(null);
+          setInputText('');
+          setEditingMessage(null);
+          
+          // Optimistic local update
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === editingMessage.id ? { ...msg, content: newContent } : msg
+            )
+          );
+        }
+      } catch (err) {
+        console.error('Update error:', err);
+      } finally {
+        setIsSending(false);
+      }
+    } else {
+      // Message Sending Mode (normal or reply)
+      const isReply = !!replyingToMessage;
+      let finalContent = '';
+
+      if (isReply) {
+        let replyText = replyingToMessage.content;
+        if (replyingToMessage.content.startsWith('{"text":')) {
+          try {
+            replyText = JSON.parse(replyingToMessage.content).text;
+          } catch (e) {}
+        }
+        finalContent = JSON.stringify({
+          text: inputText.trim(),
+          replyTo: {
+            id: replyingToMessage.id,
+            sender: replyingToMessage.sender,
+            content: replyText
+          },
+          avatar: selectedAvatarId,
+          image: selectedImage
+        });
+      } else {
+        finalContent = JSON.stringify({
+          text: inputText.trim(),
+          avatar: selectedAvatarId,
+          image: selectedImage
+        });
+      }
+
+      const newMsg = {
+        room: activeRoom,
+        sender: username,
+        content: finalContent,
+      };
+
+      try {
+        const { data, error } = await supabase.from('messages').insert(newMsg);
+        if (error) {
+          console.error('Error sending message:', error);
+          setDbError(error);
+        } else {
+          setDbError(null);
+          setInputText('');
+          setSelectedImage(null);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+          setReplyingToMessage(null);
+          
+          // Optimistic local update
+          if (data) {
+            setMessages((prev) => {
+              if (prev.some(msg => msg.id === data[0].id)) return prev;
+              return [...prev, data[0]];
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Send error:', err);
+      } finally {
+        setIsSending(false);
+      }
     }
   };
 
@@ -148,6 +501,31 @@ export default function Home() {
     }
   };
 
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setInputText(val);
+
+    if (!isTypingState && val.trim()) {
+      setIsTypingState(true);
+      sendTypingStatus(activeRoom, username, true);
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTypingState(false);
+      sendTypingStatus(activeRoom, username, false);
+    }, 2500);
+  };
+
+  const handleSelectAvatar = (avatarId) => {
+    setSelectedAvatarId(avatarId);
+    localStorage.setItem('rg_avatar_id', avatarId);
+    setIsAvatarPickerOpen(false);
+  };
+
   return (
     <div className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto overflow-hidden bg-slate-900 border-x border-slate-800" id="chat-applet">
       {/* Left Sidebar - Channels & Profiles */}
@@ -157,9 +535,62 @@ export default function Home() {
         <div className="p-4 border-b border-slate-800 bg-slate-900/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-2.5 rounded-full shadow-lg shadow-blue-500/10 text-white font-bold">
-                <User className="w-5 h-5" />
+              {/* Interactive Avatar Selector */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsAvatarPickerOpen(!isAvatarPickerOpen)}
+                  className={`relative flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-tr ${
+                    (PRESET_AVATARS.find((a) => a.id === selectedAvatarId) || PRESET_AVATARS[0]).bg
+                  } text-xl shadow-md cursor-pointer select-none active:scale-95 transition-transform duration-150 border border-slate-700/50 group`}
+                  title="অ্যাভাটার পরিবর্তন করুন"
+                >
+                  {(PRESET_AVATARS.find((a) => a.id === selectedAvatarId) || PRESET_AVATARS[0]).emoji}
+                  <div className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-800 rounded-full p-0.5 text-[8px] text-slate-400 group-hover:text-white group-hover:border-slate-600 transition">
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </div>
+                </button>
+
+                {/* Avatar Picker Dropdown Panel */}
+                {isAvatarPickerOpen && (
+                  <div className="absolute left-0 mt-2 p-3 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 w-52 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">অ্যাভাটার সিলেক্ট করুন</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsAvatarPickerOpen(false)}
+                        className="text-slate-500 hover:text-white p-0.5 rounded"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {PRESET_AVATARS.map((av) => {
+                        const isSel = av.id === selectedAvatarId;
+                        return (
+                          <button
+                            key={av.id}
+                            type="button"
+                            onClick={() => handleSelectAvatar(av.id)}
+                            className={`flex items-center justify-center h-10 w-10 rounded-lg bg-gradient-to-tr ${av.bg} text-lg transition duration-150 hover:scale-105 active:scale-90 relative ${
+                              isSel ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:opacity-95'
+                            }`}
+                            title={av.label}
+                          >
+                            {av.emoji}
+                            {isSel && (
+                              <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full p-0.5">
+                                <Check className="w-2.5 h-2.5" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
+
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold font-mono">আপনার ডাকনাম</p>
                 {isEditingUsername ? (
@@ -300,49 +731,364 @@ export default function Home() {
           ) : (
             messages.map((msg, index) => {
               const isMe = msg.sender === username;
+              
+              // Parse potential JSON message (for Reply & Edited status)
+              let isReply = false;
+              let replyInfo = null;
+              let isEdited = false;
+              let contentText = msg.content;
+              let messageAvatarId = null;
+              let messageImage = null;
+              
+              if (msg.content && msg.content.startsWith('{"text":')) {
+                try {
+                  const parsed = JSON.parse(msg.content);
+                  contentText = parsed.text;
+                  replyInfo = parsed.replyTo;
+                  isReply = !!replyInfo;
+                  isEdited = !!parsed.edited;
+                  messageAvatarId = parsed.avatar;
+                  messageImage = parsed.image;
+                } catch (e) {
+                  // Fallback
+                }
+              }
+
+              // Retrieve the correct avatar object
+              const avatarObj = messageAvatarId 
+                ? (PRESET_AVATARS.find(a => a.id === messageAvatarId) || getAvatarForUsername(msg.sender))
+                : getAvatarForUsername(msg.sender);
+
               return (
-                <div key={msg.id || index} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-500">
-                    <span className="font-semibold text-slate-400">{msg.sender}</span>
-                    <span>•</span>
-                    <span className="font-mono">
-                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'এখনই'}
-                    </span>
+                <div 
+                  key={msg.id || index} 
+                  id={`msg-${msg.id}`}
+                  className={`flex items-start gap-2.5 group relative mb-3 hover:bg-slate-800/10 p-2 rounded-xl transition duration-200 ${
+                    isMe ? 'flex-row-reverse' : 'flex-row'
+                  }`}
+                >
+                  {/* Sender Avatar Column */}
+                  <div 
+                    className={`flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-tr ${avatarObj.bg} text-sm flex items-center justify-center shadow select-none`}
+                    title={`${msg.sender} (${avatarObj.label})`}
+                  >
+                    {avatarObj.emoji}
                   </div>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                    isMe 
-                      ? 'bg-blue-600 text-white rounded-tr-none' 
-                      : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/60'
-                  }`}>
-                    <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+
+                  {/* Message Bubble + Meta Column */}
+                  <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                    <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-500">
+                      <span className="font-semibold text-slate-400">{msg.sender}</span>
+                      <span>•</span>
+                      <span className="font-mono">
+                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'এখনই'}
+                      </span>
+                      {isEdited && (
+                        <span className="bg-slate-800/80 px-1.5 py-0.2 rounded text-[9px] text-slate-400 select-none">
+                          (সম্পাদিত)
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center gap-2 max-w-full relative">
+                      {/* Message Bubble */}
+                      <div className={`max-w-[100%] rounded-2xl px-4 py-2.5 text-sm shadow-sm relative ${
+                        isMe 
+                          ? 'bg-blue-600 text-white rounded-tr-none' 
+                          : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/60'
+                      }`}>
+                        {/* Quoted Reply Box */}
+                        {isReply && replyInfo && (
+                          <div 
+                            onClick={() => scrollToMessage(replyInfo.id)}
+                            className={`mb-2 pl-2.5 border-l-2 text-xs py-1 rounded bg-slate-950/30 hover:bg-slate-950/50 transition cursor-pointer select-none max-w-md ${
+                              isMe ? 'border-blue-300 text-blue-100' : 'border-blue-500 text-slate-400'
+                            }`}
+                          >
+                            <div className="font-bold text-[10px] uppercase mb-0.5">{replyInfo.sender}</div>
+                            <div className="truncate italic">{replyInfo.content}</div>
+                          </div>
+                        )}
+                        
+                        {contentText && (
+                          <p className="whitespace-pre-wrap break-words leading-relaxed">{renderMessageText(contentText)}</p>
+                        )}
+
+                        {messageImage && (
+                          <div className="mt-2 max-w-[280px] sm:max-w-xs overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/20 cursor-zoom-in group/img shadow-md">
+                            <img 
+                              src={messageImage} 
+                              alt="ছবি" 
+                              onClick={() => setLightboxImage(messageImage)}
+                              className="max-h-56 w-full object-cover rounded-xl group-hover/img:scale-[1.02] transition duration-200"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+
+                        {/* Web Preview Card */}
+                        {(() => {
+                          const preview = getLinkPreview(contentText);
+                          if (!preview) return null;
+                          return (
+                            <a 
+                              href={preview.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-3 block rounded-xl bg-slate-950/60 hover:bg-slate-950/80 border border-slate-700/40 overflow-hidden transition-all duration-200 max-w-[280px] sm:max-w-xs group/preview text-left"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {preview.image && (
+                                <div className="relative h-24 w-full overflow-hidden">
+                                  <img 
+                                    src={preview.image} 
+                                    alt={preview.title}
+                                    className="w-full h-full object-cover group-hover/preview:scale-105 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute top-1.5 left-1.5 bg-slate-950/80 backdrop-blur px-1.5 py-0.2 rounded text-[9px] text-slate-400 font-mono">
+                                    {preview.siteName}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="p-2 bg-slate-900/40">
+                                <h4 className="text-[11px] font-bold text-slate-200 line-clamp-1 group-hover/preview:text-cyan-400 transition">
+                                  {preview.title}
+                                </h4>
+                                <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2 leading-tight">
+                                  {preview.description}
+                                </p>
+                              </div>
+                            </a>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Action buttons (Reply, Edit, Delete) - Shows on Hover */}
+                      {deletingMessageId === msg.id ? (
+                        <div className="flex items-center gap-1.5 animate-in fade-in duration-100 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 shadow-lg ml-2">
+                          <span className="text-[10px] text-slate-400 font-bold">মুছবেন?</span>
+                          <button
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-md font-bold transition"
+                            type="button"
+                          >
+                            হ্যাঁ
+                          </button>
+                          <button
+                            onClick={() => setDeletingMessageId(null)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5 rounded-md font-bold transition"
+                            type="button"
+                          >
+                            না
+                          </button>
+                        </div>
+                      ) : (
+                        <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 ${
+                          isMe ? 'mr-2 order-first' : 'ml-2'
+                        }`}>
+                          <button 
+                            onClick={() => handleReplyTo(msg)}
+                            className="p-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition shadow-md border border-slate-700/30"
+                            title="রিপ্লাই দিন"
+                            type="button"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                          {isMe && (
+                            <>
+                              <button 
+                                onClick={() => handleStartEdit(msg)}
+                                className="p-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition shadow-md border border-slate-700/30"
+                                title="সম্পাদনা করুন"
+                                type="button"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={() => setDeletingMessageId(msg.id)}
+                                className="p-1.5 bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 hover:text-rose-300 rounded-lg transition shadow-md border border-rose-900/30"
+                                title="ডিলিট করুন"
+                                type="button"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })
           )}
+          {/* Real-time Typing Indicators list */}
+          {Object.entries(typingUsers).filter(([user, isTyping]) => isTyping && user !== username).length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 italic px-2 animate-pulse mt-1 mb-2">
+              <div className="flex gap-1 items-center justify-center py-1">
+                <span className="h-1.5 w-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="h-1.5 w-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="h-1.5 w-1.5 bg-blue-400 rounded-full animate-bounce"></span>
+              </div>
+              <span>
+                {Object.entries(typingUsers)
+                  .filter(([user, isTyping]) => isTyping && user !== username)
+                  .map(([user]) => user)
+                  .join(', ')}{' '}
+                টাইপ করছেন...
+              </span>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Reply/Edit Indicator Bar */}
+        {(replyingToMessage || editingMessage) && (
+          <div className="px-4 py-2 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between animate-in slide-in-from-bottom duration-150">
+            <div className="flex items-center gap-2.5 truncate">
+              <div className="text-blue-500 flex-shrink-0">
+                {replyingToMessage ? <MessageSquare className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
+              </div>
+              <div className="text-xs truncate">
+                <span className="font-bold text-slate-300">
+                  {replyingToMessage 
+                    ? `${replyingToMessage.sender}-কে রিপ্লাই দিচ্ছেন:` 
+                    : 'বার্তা সম্পাদনা করছেন:'}
+                </span>{' '}
+                <span className="text-slate-400 italic">
+                  {(() => {
+                    const msg = replyingToMessage || editingMessage;
+                    let text = msg.content;
+                    if (msg.content.startsWith('{"text":')) {
+                      try {
+                        text = JSON.parse(msg.content).text;
+                      } catch (e) {}
+                    }
+                    return text;
+                  })()}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={replyingToMessage ? handleCancelReply : handleCancelEdit}
+              className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition"
+              type="button"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Chat Input Bar */}
         <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 bg-slate-900/80">
+          {/* Quick Emoji Panel */}
+          <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-800 select-none">
+            <span className="text-[11px] text-slate-500 font-medium mr-1 flex items-center gap-1">
+              <Smile className="w-3.5 h-3.5 text-blue-500" />
+              কুইক ইমোজি:
+            </span>
+            {['😄', '😂', '😍', '👍', '🔥', '👏', '🎉', '❤️', '🙌', '😮', '😢', '🙏'].map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => setInputText(prev => prev + emoji)}
+                className="w-7 h-7 flex items-center justify-center text-sm rounded-lg bg-slate-800/40 hover:bg-slate-800 text-slate-300 hover:text-white active:scale-90 transition duration-150"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+
+          {selectedImage && (
+            <div className="mb-3 relative inline-block">
+              <div className="relative rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950/40 p-1 max-w-xs shadow-md">
+                <img 
+                  src={selectedImage} 
+                  alt="Selected Attachment" 
+                  className="max-h-24 rounded-lg object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedImage(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="absolute top-2 right-2 bg-slate-950/90 hover:bg-slate-900 text-rose-400 hover:text-rose-300 rounded-full p-1.5 transition shadow-lg border border-slate-800"
+                  title="ছবি বাদ দিন"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const compressed = await resizeImage(file, 1000, 1000, 0.7);
+                  setSelectedImage(compressed);
+                } catch (err) {
+                  console.error('Image processing error:', err);
+                }
+              }}
+              accept="image/*"
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-bold p-3.5 rounded-xl border border-slate-700/60 active:scale-95 transition-all duration-150 flex items-center justify-center flex-shrink-0"
+              title="ছবি যুক্ত করুন"
+            >
+              <ImageIcon className="w-4 h-4" />
+            </button>
             <input
               type="text"
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="আপনার বার্তা এখানে লিখুন..."
+              onChange={handleInputChange}
+              placeholder={editingMessage ? "বার্তাটি সম্পাদন করুন..." : "আপনার বার্তা এখানে লিখুন..."}
               className="flex-1 bg-slate-950 border border-slate-800 focus:border-blue-500 text-white text-sm px-4 py-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all duration-200 placeholder:text-slate-600"
             />
             <button
               type="submit"
-              disabled={isSending || !inputText.trim()}
+              disabled={isSending || (!inputText.trim() && !selectedImage)}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white font-bold p-3.5 rounded-xl shadow-lg shadow-blue-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center flex-shrink-0"
             >
-              <Send className="w-4 h-4" />
+              {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
             </button>
           </div>
         </form>
       </div>
+
+      {/* Lightbox Modal */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200 cursor-zoom-out"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex items-center justify-center">
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-12 right-0 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white p-2.5 rounded-xl transition border border-slate-800"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img 
+              src={lightboxImage} 
+              alt="বড় ভিউ" 
+              className="max-h-[80vh] max-w-full rounded-2xl object-contain shadow-2xl border border-slate-850"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

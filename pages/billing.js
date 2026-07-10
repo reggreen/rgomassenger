@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { CreditCard, CheckCircle, Clock, Plus, Search, DollarSign, TrendingUp, Sparkles, X, User, ArrowRight } from 'lucide-react';
+import { CreditCard, CheckCircle, Clock, Plus, Search, DollarSign, TrendingUp, Sparkles, X, User, ArrowRight, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 
 export default function Billing() {
   const [billingList, setBillingList] = useState([]);
@@ -8,12 +8,15 @@ export default function Billing() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [editingBillingId, setEditingBillingId] = useState(null);
+  const [deletingBillingId, setDeletingBillingId] = useState(null);
 
   // Form states
   const [memberName, setMemberName] = useState('');
   const [amount, setAmount] = useState('500');
   const [month, setMonth] = useState('জুন ২০২৬');
   const [txId, setTxId] = useState('');
+  const [status, setStatus] = useState('Paid');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load and subscribe
@@ -58,37 +61,101 @@ export default function Billing() {
     };
   }, []);
 
+  const handleOpenPayModal = () => {
+    setEditingBillingId(null);
+    setMemberName('');
+    setAmount('500');
+    setMonth('জুন ২০২৬');
+    setTxId('');
+    setStatus('Paid');
+    setIsPayModalOpen(true);
+  };
+
+  const handleStartEdit = (item) => {
+    setEditingBillingId(item.id);
+    setMemberName(item.member_name);
+    setAmount(item.amount.toString());
+    setMonth(item.month);
+    setTxId(item.tx_id || '');
+    setStatus(item.status || 'Paid');
+    setIsPayModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsPayModalOpen(false);
+    setEditingBillingId(null);
+    setMemberName('');
+    setAmount('500');
+    setMonth('জুন ২০২৬');
+    setTxId('');
+    setStatus('Paid');
+  };
+
   const handlePaySubmit = async (e) => {
     e.preventDefault();
-    if (!memberName.trim() || !txId.trim() || isSubmitting) return;
+    if (!memberName.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
-    const newPayment = {
+    const billingData = {
       member_name: memberName.trim(),
       amount: parseFloat(amount),
       month: month,
-      status: 'Paid',
-      payment_date: new Date().toISOString().split('T')[0],
-      tx_id: txId.trim()
+      status: status,
+      payment_date: status === 'Paid' ? (editingBillingId ? (billingList.find(b => b.id === editingBillingId)?.payment_date || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]) : null,
+      tx_id: status === 'Paid' ? txId.trim() : null
     };
 
     try {
-      const { error } = await supabase.from('billing').insert(newPayment);
-      if (error) {
-        console.error(error);
+      if (editingBillingId) {
+        const { error } = await supabase
+          .from('billing')
+          .update(billingData)
+          .eq('id', editingBillingId);
+        
+        if (error) {
+          console.error(error);
+        } else {
+          handleCloseModal();
+          // reload list is done via subscription, but let's do fallback too
+          const { data } = await supabase.from('billing').select('*').order('created_at', { ascending: false });
+          if (data) setBillingList(data);
+        }
       } else {
-        setIsPayModalOpen(false);
-        setIsSuccess(true);
-        // Reset Form
-        setMemberName('');
-        setTxId('');
-        // Hide success banner after 5s
-        setTimeout(() => setIsSuccess(false), 5000);
+        const { error } = await supabase.from('billing').insert(billingData);
+        if (error) {
+          console.error(error);
+        } else {
+          handleCloseModal();
+          setIsSuccess(true);
+          // Hide success banner after 5s
+          setTimeout(() => setIsSuccess(false), 5000);
+          const { data } = await supabase.from('billing').select('*').order('created_at', { ascending: false });
+          if (data) setBillingList(data);
+        }
       }
     } catch (err) {
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteConfirm = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('billing')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error(error);
+      } else {
+        setBillingList(prev => prev.filter(item => item.id !== id));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingBillingId(null);
     }
   };
 
@@ -127,7 +194,7 @@ export default function Billing() {
         </div>
 
         <button
-          onClick={() => setIsPayModalOpen(true)}
+          onClick={handleOpenPayModal}
           className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-blue-500/15 active:scale-95 transition-all duration-150 flex items-center gap-2 text-sm"
         >
           <Plus className="w-4 h-4" />
@@ -253,59 +320,113 @@ export default function Billing() {
                 <th className="px-6 py-3.5 font-bold">স্ট্যাটাস</th>
                 <th className="px-6 py-3.5 font-bold">পেমেন্ট তারিখ</th>
                 <th className="px-6 py-3.5 font-bold">ট্রানজেকশন ID</th>
+                <th className="px-6 py-3.5 font-bold text-right">অ্যাকশন</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {filteredBilling.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-10 text-center text-slate-500">
+                  <td colSpan="7" className="px-6 py-10 text-center text-slate-500">
                     কোনো পেমেন্ট রেকর্ড খুঁজে পাওয়া যায়নি।
                   </td>
                 </tr>
               ) : (
-                filteredBilling.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/30 transition">
-                    <td className="px-6 py-4 font-semibold text-white">{item.member_name}</td>
-                    <td className="px-6 py-4 text-slate-400 font-medium">{item.month}</td>
-                    <td className="px-6 py-4 font-mono font-bold text-white">৳{item.amount}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        item.status === 'Paid'
-                          ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                          : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                      }`}>
-                        {item.status === 'Paid' ? (
-                          <>
-                            <CheckCircle className="w-3 h-3" />
-                            <span>পরিশোধিত</span>
-                          </>
+                filteredBilling.map((item) => {
+                  if (deletingBillingId === item.id) {
+                    return (
+                      <tr key={item.id} className="bg-rose-950/20 border-l-2 border-rose-500 animate-in fade-in duration-150">
+                        <td colSpan="7" className="px-6 py-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold">
+                              <AlertTriangle className="w-4 h-4 animate-bounce" />
+                              <span>আপনি কি নিশ্চিতভাবে "{item.member_name}" এর পেমেন্ট রেকর্ডটি মুছে ফেলতে চান?</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleDeleteConfirm(item.id)}
+                                className="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition"
+                                type="button"
+                              >
+                                হ্যাঁ, ডিলিট করুন
+                              </button>
+                              <button
+                                onClick={() => setDeletingBillingId(null)}
+                                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition"
+                                type="button"
+                              >
+                                না
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-800/30 transition">
+                      <td className="px-6 py-4 font-semibold text-white">{item.member_name}</td>
+                      <td className="px-6 py-4 text-slate-400 font-medium">{item.month}</td>
+                      <td className="px-6 py-4 font-mono font-bold text-white">৳{item.amount}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          item.status === 'Paid'
+                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                            : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                        }`}>
+                          {item.status === 'Paid' ? (
+                            <>
+                              <CheckCircle className="w-3 h-3" />
+                              <span>পরিশোধিত</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-3 h-3" />
+                              <span>বকেয়া</span>
+                            </>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-400 text-xs font-mono">{item.payment_date || '—'}</td>
+                      <td className="px-6 py-4">
+                        {item.tx_id ? (
+                          <code className="bg-slate-950 border border-slate-800 px-2 py-1 rounded text-xs font-mono text-blue-400">
+                            {item.tx_id}
+                          </code>
                         ) : (
-                          <>
-                            <Clock className="w-3 h-3" />
-                            <span>বকেয়া</span>
-                          </>
+                          <span className="text-slate-600">—</span>
                         )}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 text-xs font-mono">{item.payment_date || '—'}</td>
-                    <td className="px-6 py-4">
-                      {item.tx_id ? (
-                        <code className="bg-slate-950 border border-slate-800 px-2 py-1 rounded text-xs font-mono text-blue-400">
-                          {item.tx_id}
-                        </code>
-                      ) : (
-                        <span className="text-slate-600">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleStartEdit(item)}
+                            className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                            title="সম্পাদনা করুন"
+                            type="button"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeletingBillingId(item.id)}
+                            className="p-1.5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 rounded-lg transition"
+                            title="ডিলিট করুন"
+                            type="button"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Payment Submit Modal */}
+      {/* Payment Submit / Edit Modal */}
       {isPayModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150">
@@ -313,11 +434,14 @@ export default function Billing() {
             <div className="border-b border-slate-800 p-5 flex items-center justify-between bg-slate-950/50">
               <div className="flex items-center gap-2 text-blue-500">
                 <CreditCard className="w-5 h-5" />
-                <h3 className="text-sm font-bold text-white">বিকাশ/রকেট/নগদ পেমেন্ট ফর্ম</h3>
+                <h3 className="text-sm font-bold text-white">
+                  {editingBillingId ? 'পেমেন্ট রেকর্ড সম্পাদন করুন' : 'বিকাশ/রকেট/নগদ পেমেন্ট ফর্ম'}
+                </h3>
               </div>
               <button 
-                onClick={() => setIsPayModalOpen(false)}
+                onClick={handleCloseModal}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
+                type="button"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -365,32 +489,48 @@ export default function Billing() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">ট্রানজেকশন ID (TxID)</label>
-                <input
-                  type="text"
-                  required
-                  value={txId}
-                  onChange={(e) => setTxId(e.target.value)}
-                  placeholder="উদা: BK89123M"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-blue-500 uppercase placeholder:normal-case"
-                />
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">পেমেন্ট স্ট্যাটাস</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="Paid">পরিশোধিত (Paid)</option>
+                  <option value="Unpaid">বকেয়া (Unpaid)</option>
+                </select>
               </div>
 
-              <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 text-xs text-slate-500 space-y-1">
-                <p className="font-bold text-slate-400 flex items-center gap-1">
-                  <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
-                  পেমেন্ট পাঠানোর ঠিকানা
-                </p>
-                <p>বিকাশ/রকেট/নগদ (পার্সোনাল): <strong className="text-slate-300 font-mono">01700-000000</strong></p>
-                <p className="text-[10px]">লেনদেন শেষে প্রাপ্ত ট্রানজেকশন আইডি উপরে সাবমিট করুন।</p>
-              </div>
+              {status === 'Paid' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">ট্রানজেকশন ID (TxID)</label>
+                  <input
+                    type="text"
+                    required
+                    value={txId}
+                    onChange={(e) => setTxId(e.target.value)}
+                    placeholder=" BK89123M"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-blue-500 uppercase placeholder:normal-case"
+                  />
+                </div>
+              )}
+
+              {status === 'Paid' && (
+                <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 text-xs text-slate-500 space-y-1">
+                  <p className="font-bold text-slate-400 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+                    পেমেন্ট পাঠানোর ঠিকানা
+                  </p>
+                  <p>বিকাশ/রকেট/নগদ (পার্সোনাল): <strong className="text-slate-300 font-mono">01700-000000</strong></p>
+                  <p className="text-[10px]">লেনদেন শেষে প্রাপ্ত ট্রানজেকশন আইডি উপরে সাবমিট করুন।</p>
+                </div>
+              )}
 
               <button
                 type="submit"
                 disabled={isSubmitting}
                 className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center gap-2 text-sm"
               >
-                {isSubmitting ? 'প্রসেসিং হচ্ছে...' : 'পেমেন্ট ভেরিফাই করুন'}
+                {isSubmitting ? 'প্রসেসিং হচ্ছে...' : editingBillingId ? 'রেকর্ড আপডেট করুন' : 'পেমেন্ট ভেরিফাই করুন'}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>

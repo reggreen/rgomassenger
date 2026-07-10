@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { HelpCircle, AlertTriangle, CheckCircle, Plus, Search, User, Tag, Clock, X } from 'lucide-react';
+import { HelpCircle, AlertTriangle, CheckCircle, Plus, Search, User, Tag, Clock, X, Edit3, Trash2 } from 'lucide-react';
+import SupabaseBanner from '../components/SupabaseBanner';
 
 const CATEGORIES = ['সব টিকিট', 'বিলিং ও পেমেন্ট', 'সার্ভার সমস্যা', 'ডিজাইন ও বাগ', 'অন্যান্য'];
 
@@ -9,12 +10,15 @@ export default function Support() {
   const [selectedCategory, setSelectedCategory] = useState('সব টিকিট');
   const [searchTerm, setSearchTerm] = useState('');
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
+  const [editingTicketId, setEditingTicketId] = useState(null);
+  const [deletingTicketId, setDeletingTicketId] = useState(null);
 
   // Form states
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('সার্ভার সমস্যা');
+  const [status, setStatus] = useState('Open');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load and subscribe
@@ -61,33 +65,94 @@ export default function Support() {
     };
   }, []);
 
+  const handleOpenTicketModal = () => {
+    setEditingTicketId(null);
+    setName('');
+    setTitle('');
+    setDescription('');
+    setCategory('সার্ভার সমস্যা');
+    setStatus('Open');
+    setIsTicketModalOpen(true);
+  };
+
+  const handleStartEdit = (ticket) => {
+    setEditingTicketId(ticket.id);
+    setName(ticket.name);
+    setTitle(ticket.title);
+    setDescription(ticket.description);
+    setCategory(ticket.category);
+    setStatus(ticket.status || 'Open');
+    setIsTicketModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsTicketModalOpen(false);
+    setEditingTicketId(null);
+    setName('');
+    setTitle('');
+    setDescription('');
+    setCategory('সার্ভার সমস্যা');
+    setStatus('Open');
+  };
+
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!name.trim() || !title.trim() || !description.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
-    const newTicket = {
+    const ticketData = {
       title: title.trim(),
       name: name.trim(),
       description: description.trim(),
       category: category,
-      status: 'Open'
+      status: status
     };
 
     try {
-      const { error } = await supabase.from('support').insert(newTicket);
-      if (error) {
-        console.error(error);
+      if (editingTicketId) {
+        const { error } = await supabase
+          .from('support')
+          .update(ticketData)
+          .eq('id', editingTicketId);
+        
+        if (error) {
+          console.error(error);
+        } else {
+          handleCloseModal();
+          fetchTickets();
+        }
       } else {
-        setIsTicketModalOpen(false);
-        setTitle('');
-        setName('');
-        setDescription('');
+        const { error } = await supabase.from('support').insert(ticketData);
+        if (error) {
+          console.error(error);
+        } else {
+          handleCloseModal();
+          fetchTickets();
+        }
       }
     } catch (err) {
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteConfirm = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('support')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error(error);
+      } else {
+        setTickets(prev => prev.filter(t => t.id !== id));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingTicketId(null);
     }
   };
 
@@ -122,6 +187,11 @@ export default function Support() {
 
   return (
     <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="support-container">
+      {/* Supabase Connection Status Banner */}
+      <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900/40">
+        <SupabaseBanner />
+      </div>
+
       {/* Top Welcome Board */}
       <div className="bg-gradient-to-r from-teal-900/40 to-slate-900 border border-teal-900/30 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl">
         <div className="space-y-2">
@@ -136,7 +206,7 @@ export default function Support() {
         </div>
 
         <button
-          onClick={() => setIsTicketModalOpen(true)}
+          onClick={handleOpenTicketModal}
           className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-teal-500/15 active:scale-95 transition-all duration-150 flex items-center gap-2 text-sm"
         >
           <Plus className="w-4 h-4" />
@@ -188,23 +258,70 @@ export default function Support() {
           </div>
         ) : (
           filteredTickets.map((ticket) => (
-            <div key={ticket.id} className="bg-slate-900 border border-slate-850 hover:border-slate-700/80 rounded-2xl p-6 transition duration-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start">
-              {/* Left Side Details */}
-              <div className="space-y-3 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="bg-teal-500/10 border border-teal-500/20 text-teal-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
-                    {ticket.category}
-                  </span>
-                  <span className="text-xs text-slate-500">•</span>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                    <User className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="font-semibold text-slate-300">{ticket.name}</span>
+            <div key={ticket.id} className="bg-slate-900 border border-slate-850 hover:border-slate-700/80 rounded-2xl p-6 transition duration-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start relative overflow-hidden group">
+              {/* Inline Deletion Confirmation Overlay */}
+              {deletingTicketId === ticket.id && (
+                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 z-20 text-center animate-in fade-in duration-150">
+                  <AlertTriangle className="w-10 h-10 text-rose-500 mb-2 animate-bounce" />
+                  <p className="text-sm font-bold text-white mb-1">আপনি কি নিশ্চিতভাবে এই টিকিটটি মুছে ফেলতে চান?</p>
+                  <p className="text-xs text-slate-400 mb-4 px-4">"{ticket.title}" টিকিটটি চিরতরে মুছে যাবে।</p>
+                  <div className="flex gap-2.5">
+                    <button
+                      onClick={() => handleDeleteConfirm(ticket.id)}
+                      className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-xl active:scale-95 transition"
+                      type="button"
+                    >
+                      হ্যাঁ, ডিলিট করুন
+                    </button>
+                    <button
+                      onClick={() => setDeletingTicketId(null)}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2 rounded-xl active:scale-95 transition"
+                      type="button"
+                    >
+                      না, থাক
+                    </button>
                   </div>
-                  <span className="text-xs text-slate-500">•</span>
-                  <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-slate-500" />
-                    {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'আজ'}
-                  </span>
+                </div>
+              )}
+
+              {/* Left Side Details */}
+              <div className="space-y-3 flex-1 w-full">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bg-teal-500/10 border border-teal-500/20 text-teal-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
+                      {ticket.category}
+                    </span>
+                    <span className="text-xs text-slate-500">•</span>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <User className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="font-semibold text-slate-300">{ticket.name}</span>
+                    </div>
+                    <span className="text-xs text-slate-500">•</span>
+                    <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-500" />
+                      {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'আজ'}
+                    </span>
+                  </div>
+
+                  {/* Card Controls */}
+                  <div className="flex items-center gap-1 opacity-80 md:opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                    <button
+                      onClick={() => handleStartEdit(ticket)}
+                      className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                      title="সম্পাদনা করুন"
+                      type="button"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingTicketId(ticket.id)}
+                      className="p-1.5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 rounded-lg transition"
+                      title="ডিলিট করুন"
+                      type="button"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -249,7 +366,7 @@ export default function Support() {
         )}
       </div>
 
-      {/* Create Ticket Modal */}
+      {/* Create/Edit Ticket Modal */}
       {isTicketModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150">
@@ -257,11 +374,14 @@ export default function Support() {
             <div className="border-b border-slate-800 p-5 flex items-center justify-between bg-slate-950/50">
               <div className="flex items-center gap-2 text-teal-500">
                 <HelpCircle className="w-5 h-5" />
-                <h3 className="text-sm font-bold text-white">নতুন সাপোর্ট টিকিট খুলুন</h3>
+                <h3 className="text-sm font-bold text-white">
+                  {editingTicketId ? 'টিকিট সম্পাদন করুন' : 'নতুন সাপোর্ট টিকিট খুলুন'}
+                </h3>
               </div>
               <button 
-                onClick={() => setIsTicketModalOpen(false)}
+                onClick={handleCloseModal}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
+                type="button"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -295,16 +415,29 @@ export default function Support() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">টিকিটের বিষয় (Subject / Title)</label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="উদা: সাইট লোড হতে বেশি সময় লাগছে"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">টিকিটের বিষয় (Subject / Title)</label>
+                  <input
+                    type="text"
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="উদা: সাইট লোড হতে বেশি সময় লাগছে"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">টিকিট স্ট্যাটাস (Status)</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500"
+                  >
+                    <option value="Open">Open (ওপেন টিকিট)</option>
+                    <option value="Resolved">Resolved (মীমাংসিত)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -324,7 +457,7 @@ export default function Support() {
                 disabled={isSubmitting}
                 className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-teal-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-sm"
               >
-                {isSubmitting ? 'টিকিট সাবমিট হচ্ছে...' : 'টিকিট পোস্ট করুন'}
+                {isSubmitting ? 'সেভ হচ্ছে...' : editingTicketId ? 'টিকিট আপডেট করুন' : 'টিকিট পোস্ট করুন'}
               </button>
             </form>
           </div>

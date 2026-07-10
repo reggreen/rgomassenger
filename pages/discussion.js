@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { MessageCircle, ThumbsUp, Plus, Tag, Search, User, Filter, X, CornerDownRight, Sparkles } from 'lucide-react';
+import { MessageCircle, ThumbsUp, Plus, Tag, Search, User, Filter, X, CornerDownRight, Sparkles, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 
 const CATEGORIES = ['সব পোস্ট', 'ডিজাইন', 'প্রোগ্রামিং', 'সাধারণ আড্ডা', 'প্রশ্ন ও উত্তর'];
 
@@ -9,6 +9,8 @@ export default function Discussion() {
   const [selectedCategory, setSelectedCategory] = useState('সব পোস্ট');
   const [searchTerm, setSearchTerm] = useState('');
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
+  const [editingPostId, setEditingPostId] = useState(null);
+  const [deletingPostId, setDeletingPostId] = useState(null);
 
   // Form states
   const [authorName, setAuthorName] = useState('');
@@ -61,34 +63,94 @@ export default function Discussion() {
     };
   }, []);
 
+  const handleOpenPostModal = () => {
+    setEditingPostId(null);
+    setTitle('');
+    setAuthorName('');
+    setContent('');
+    setCategory('সাধারণ আড্ডা');
+    setIsPostModalOpen(true);
+  };
+
+  const handleStartEdit = (post) => {
+    setEditingPostId(post.id);
+    setTitle(post.title);
+    setAuthorName(post.author);
+    setContent(post.content);
+    setCategory(post.category);
+    setIsPostModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsPostModalOpen(false);
+    setEditingPostId(null);
+    setTitle('');
+    setAuthorName('');
+    setContent('');
+    setCategory('সাধারণ আড্ডা');
+  };
+
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (!authorName.trim() || !title.trim() || !content.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
-    const newPost = {
+    const postData = {
       title: title.trim(),
       author: authorName.trim(),
       content: content.trim(),
       category: category,
-      likes: 0,
-      replies: 0
     };
 
     try {
-      const { error } = await supabase.from('discussion').insert(newPost);
-      if (error) {
-        console.error(error);
+      if (editingPostId) {
+        const { error } = await supabase
+          .from('discussion')
+          .update(postData)
+          .eq('id', editingPostId);
+        
+        if (error) {
+          console.error(error);
+        } else {
+          handleCloseModal();
+          fetchPosts();
+        }
       } else {
-        setIsPostModalOpen(false);
-        setTitle('');
-        setAuthorName('');
-        setContent('');
+        const { error } = await supabase.from('discussion').insert({
+          ...postData,
+          likes: 0,
+          replies: 0
+        });
+        if (error) {
+          console.error(error);
+        } else {
+          handleCloseModal();
+          fetchPosts();
+        }
       }
     } catch (err) {
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteConfirm = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('discussion')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error(error);
+      } else {
+        setPosts(prev => prev.filter(p => p.id !== id));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingPostId(null);
     }
   };
 
@@ -137,7 +199,7 @@ export default function Discussion() {
         </div>
 
         <button
-          onClick={() => setIsPostModalOpen(true)}
+          onClick={handleOpenPostModal}
           className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-indigo-500/15 active:scale-95 transition-all duration-150 flex items-center gap-2 text-sm"
         >
           <Plus className="w-4 h-4" />
@@ -189,22 +251,69 @@ export default function Discussion() {
           </div>
         ) : (
           filteredPosts.map((post) => (
-            <div key={post.id} className="bg-slate-900 border border-slate-850 hover:border-slate-700/80 rounded-2xl p-6 transition duration-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start">
-              {/* Left Details */}
-              <div className="space-y-3 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
-                    {post.category}
-                  </span>
-                  <span className="text-xs text-slate-500">•</span>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                    <User className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="font-semibold text-slate-300">{post.author}</span>
+            <div key={post.id} className="bg-slate-900 border border-slate-850 hover:border-slate-700/80 rounded-2xl p-6 transition duration-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start relative overflow-hidden">
+              {/* Inline Deletion Confirmation Overlay */}
+              {deletingPostId === post.id && (
+                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 z-20 text-center animate-in fade-in duration-150">
+                  <AlertTriangle className="w-10 h-10 text-rose-500 mb-2 animate-bounce" />
+                  <p className="text-sm font-bold text-white mb-1">আপনি কি নিশ্চিতভাবে এই পোস্টটি মুছে ফেলতে চান?</p>
+                  <p className="text-xs text-slate-400 mb-4 px-4">"{post.title}" পোস্টটি চিরতরে মুছে যাবে।</p>
+                  <div className="flex gap-2.5">
+                    <button
+                      onClick={() => handleDeleteConfirm(post.id)}
+                      className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-xl active:scale-95 transition"
+                      type="button"
+                    >
+                      হ্যাঁ, ডিলিট করুন
+                    </button>
+                    <button
+                      onClick={() => setDeletingPostId(null)}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2 rounded-xl active:scale-95 transition"
+                      type="button"
+                    >
+                      না, থাক
+                    </button>
                   </div>
-                  <span className="text-xs text-slate-500">•</span>
-                  <span className="text-xs text-slate-500 font-mono">
-                    {post.created_at ? new Date(post.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'আজ'}
-                  </span>
+                </div>
+              )}
+
+              {/* Left Details */}
+              <div className="space-y-3 flex-1 w-full">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
+                      {post.category}
+                    </span>
+                    <span className="text-xs text-slate-500">•</span>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <User className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="font-semibold text-slate-300">{post.author}</span>
+                    </div>
+                    <span className="text-xs text-slate-500">•</span>
+                    <span className="text-xs text-slate-500 font-mono">
+                      {post.created_at ? new Date(post.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'আজ'}
+                    </span>
+                  </div>
+
+                  {/* Card Controls */}
+                  <div className="flex items-center gap-1 opacity-80 md:opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                    <button
+                      onClick={() => handleStartEdit(post)}
+                      className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                      title="সম্পাদনা করুন"
+                      type="button"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingPostId(post.id)}
+                      className="p-1.5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 rounded-lg transition"
+                      title="ডিলিট করুন"
+                      type="button"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -230,7 +339,7 @@ export default function Discussion() {
         )}
       </div>
 
-      {/* New Topic Modal */}
+      {/* New/Edit Topic Modal */}
       {isPostModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150">
@@ -238,11 +347,14 @@ export default function Discussion() {
             <div className="border-b border-slate-800 p-5 flex items-center justify-between bg-slate-950/50">
               <div className="flex items-center gap-2 text-indigo-500">
                 <MessageCircle className="w-5 h-5" />
-                <h3 className="text-sm font-bold text-white">নতুন আলোচনার বিষয় পোস্ট করুন</h3>
+                <h3 className="text-sm font-bold text-white">
+                  {editingPostId ? 'আলোচনার বিষয় সম্পাদন করুন' : 'নতুন আলোচনার বিষয় পোস্ট করুন'}
+                </h3>
               </div>
               <button 
-                onClick={() => setIsPostModalOpen(false)}
+                onClick={handleCloseModal}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
+                type="button"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -305,7 +417,7 @@ export default function Discussion() {
                 disabled={isSubmitting}
                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-sm"
               >
-                {isSubmitting ? 'পোস্ট সাবমিট হচ্ছে...' : 'ওপেন ফোরামে পোস্ট করুন'}
+                {isSubmitting ? 'সেভ হচ্ছে...' : editingPostId ? 'পোস্ট আপডেট করুন' : 'ওপেন ফোরামে পোস্ট করুন'}
               </button>
             </form>
           </div>
