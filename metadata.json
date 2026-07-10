@@ -1,0 +1,8 @@
+{
+  "name": "Rgomassenger",
+  "description": "An interactive web app for billing, events, technical support, general discussion, and team updates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,15 +1,335 @@
-import Navbar from '../components/Navbar';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { HelpCircle, AlertTriangle, CheckCircle, Plus, Search, User, Tag, Clock, X } from 'lucide-react';
+
+const CATEGORIES = ['সব টিকিট', 'বিলিং ও পেমেন্ট', 'সার্ভার সমস্যা', 'ডিজাইন ও বাগ', 'অন্যান্য'];
 
 export default function Support() {
+  const [tickets, setTickets] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('সব টিকিট');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
+
+  // Form states
+  const [name, setName] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('সার্ভার সমস্যা');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load and subscribe
+  const fetchTickets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('support')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error(error);
+        return;
+      }
+      if (data) {
+        setTickets(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    fetchTickets();
+
+    const subscription = supabase
+      .channel('public:support')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'support' },
+        () => {
+          if (active) {
+            fetchTickets();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleCreateTicket = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || !title.trim() || !description.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const newTicket = {
+      title: title.trim(),
+      name: name.trim(),
+      description: description.trim(),
+      category: category,
+      status: 'Open'
+    };
+
+    try {
+      const { error } = await supabase.from('support').insert(newTicket);
+      if (error) {
+        console.error(error);
+      } else {
+        setIsTicketModalOpen(false);
+        setTitle('');
+        setName('');
+        setDescription('');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleStatus = async (id, currentStatus) => {
+    const nextStatus = currentStatus === 'Open' ? 'Resolved' : 'Open';
+    try {
+      // Optimistic update
+      setTickets(prev => prev.map(t => t.id === id ? { ...t, status: nextStatus } : t));
+      
+      const { error } = await supabase
+        .from('support')
+        .update({ status: nextStatus })
+        .eq('id', id);
+      
+      if (error) {
+        console.error(error);
+        fetchTickets(); // Rollback
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Filter tickets
+  const filteredTickets = tickets.filter(ticket => {
+    const matchesCategory = selectedCategory === 'সব টিকিট' || ticket.category === selectedCategory;
+    const matchesSearch = ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          ticket.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          ticket.name.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
   return (
-    <>
-      <Navbar />
-      <h1>Technical Support</h1>
-      <form>
-        <label>Issue:</label>
-        <input type="text" name="issue" />
-        <button type="submit">Submit</button>
-      </form>
-    </>
+    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="support-container">
+      {/* Top Welcome Board */}
+      <div className="bg-gradient-to-r from-teal-900/40 to-slate-900 border border-teal-900/30 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs font-semibold text-teal-400">
+            <HelpCircle className="w-3.5 h-3.5 animate-pulse" />
+            হেল্পডেস্ক ও বাগ ট্র্যাকিং সিস্টেম
+          </div>
+          <h2 className="text-2xl font-extrabold tracking-tight text-white">টেকনিক্যাল সাপোর্ট ও হেল্পডেস্ক</h2>
+          <p className="text-slate-400 text-sm max-w-2xl">
+            আপনার কোনো সার্ভিস বাগ, বিলিং সমস্যা বা সাধারণ জিজ্ঞাসা থাকলে নিচে টিকিট পোস্ট করুন। ডেভেলপার প্যানেল সমাধান দিয়ে সাহায্য করবে।
+          </p>
+        </div>
+
+        <button
+          onClick={() => setIsTicketModalOpen(true)}
+          className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-teal-500/15 active:scale-95 transition-all duration-150 flex items-center gap-2 text-sm"
+        >
+          <Plus className="w-4 h-4" />
+          <span>নতুন টিকিট ফাইল করুন</span>
+        </button>
+      </div>
+
+      {/* Categories & Search */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        {/* Categories Pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                selectedCategory === cat
+                  ? 'bg-teal-600 text-white shadow-md shadow-teal-600/15'
+                  : 'bg-slate-900 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="relative w-full md:w-72 flex-shrink-0">
+          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="টিকিটের বিষয় বা নাম খুঁজুন..."
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
+          />
+        </div>
+      </div>
+
+      {/* Tickets List */}
+      <div className="space-y-4">
+        {filteredTickets.length === 0 ? (
+          <div className="bg-slate-900/60 border border-slate-850 rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-3">
+            <HelpCircle className="w-12 h-12 text-teal-500/45" />
+            <div>
+              <p className="text-slate-300 font-bold">কোনো সাপোর্ট টিকিট পাওয়া যায়নি</p>
+              <p className="text-slate-500 text-xs mt-1">সবকিছু ঠিকঠাক কাজ করছে! কোনো বাগ থাকলে টিকিট ফাইল করতে পারেন।</p>
+            </div>
+          </div>
+        ) : (
+          filteredTickets.map((ticket) => (
+            <div key={ticket.id} className="bg-slate-900 border border-slate-850 hover:border-slate-700/80 rounded-2xl p-6 transition duration-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start">
+              {/* Left Side Details */}
+              <div className="space-y-3 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="bg-teal-500/10 border border-teal-500/20 text-teal-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
+                    {ticket.category}
+                  </span>
+                  <span className="text-xs text-slate-500">•</span>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <User className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="font-semibold text-slate-300">{ticket.name}</span>
+                  </div>
+                  <span className="text-xs text-slate-500">•</span>
+                  <span className="text-xs text-slate-500 font-mono flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-500" />
+                    {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'আজ'}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-extrabold text-white leading-snug">
+                    {ticket.title}
+                  </h3>
+                  <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+                </div>
+              </div>
+
+              {/* Right Side Status & Resolving controls */}
+              <div className="flex md:flex-col items-center gap-2 justify-end flex-shrink-0 w-full md:w-auto pt-4 md:pt-0 border-t border-slate-800 md:border-0">
+                {/* Status Pills */}
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold w-full md:w-32 justify-center border ${
+                  ticket.status === 'Open'
+                    ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                    : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                }`}>
+                  {ticket.status === 'Open' ? (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>ওপেন টিকিট</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>মীমাংসিত (Solved)</span>
+                    </>
+                  )}
+                </span>
+
+                {/* Resolve/Reopen button */}
+                <button
+                  onClick={() => handleToggleStatus(ticket.id, ticket.status)}
+                  className="w-full md:w-32 bg-slate-950 hover:bg-teal-950/40 border border-slate-850 hover:border-teal-800/40 text-xs font-bold py-2.5 rounded-xl text-slate-400 hover:text-teal-300 transition text-center"
+                >
+                  {ticket.status === 'Open' ? 'সমাধান করুন ✓' : 'পুনরায় খুলুন ↺'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Create Ticket Modal */}
+      {isTicketModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="border-b border-slate-800 p-5 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-2 text-teal-500">
+                <HelpCircle className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-white">নতুন সাপোর্ট টিকিট খুলুন</h3>
+              </div>
+              <button 
+                onClick={() => setIsTicketModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleCreateTicket} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">আপনার নাম</label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="উদা: কামরুল ইসলাম"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">সমস্যার ধরণ (Category)</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500"
+                  >
+                    {CATEGORIES.slice(1).map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">টিকিটের বিষয় (Subject / Title)</label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="উদা: সাইট লোড হতে বেশি সময় লাগছে"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">সমস্যার বিস্তারিত বর্ণনা</label>
+                <textarea
+                  required
+                  rows="4"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="আপনার সমস্যার সম্মুখীন হওয়া ঘটনাটি বিস্তারিত বর্ণনা করুন..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-teal-500 resize-none"
+                ></textarea>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-teal-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-sm"
+              >
+                {isSubmitting ? 'টিকিট সাবমিট হচ্ছে...' : 'টিকিট পোস্ট করুন'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
