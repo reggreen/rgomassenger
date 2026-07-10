@@ -6,8 +6,15 @@ export default function SupabaseBanner() {
   const [isOpen, setIsOpen] = useState(false);
   const [copiedSection, setCopiedSection] = useState(null);
 
-  const sqlSchema = `-- ১. messages টেবিল (চ্যাট রুমের জন্য)
-create table if not exists messages (
+  const sqlSchema = `-- আগের পুরানো টেবিলগুলো থাকলে তা মুছে ফেলার জন্য (কোনো কনফ্লিক্ট এড়াতে)
+drop table if exists messages cascade;
+drop table if exists billing cascade;
+drop table if exists events cascade;
+drop table if exists discussion cascade;
+drop table if exists support cascade;
+
+-- ১. messages টেবিল (চ্যাট রুমের জন্য)
+create table messages (
   id uuid default gen_random_uuid() primary key,
   room text not null,
   sender text not null,
@@ -16,7 +23,7 @@ create table if not exists messages (
 );
 
 -- ২. billing টেবিল (বিলিং ও ফান্ড ট্র্যাকিংয়ের জন্য)
-create table if not exists billing (
+create table billing (
   id uuid default gen_random_uuid() primary key,
   member_name text not null,
   amount numeric not null,
@@ -28,7 +35,7 @@ create table if not exists billing (
 );
 
 -- ৩. events টেবিল (ইভেন্টস ট্র্যাকিংয়ের জন্য)
-create table if not exists events (
+create table events (
   id uuid default gen_random_uuid() primary key,
   title text not null,
   date timestamp with time zone not null,
@@ -38,7 +45,7 @@ create table if not exists events (
 );
 
 -- ৪. discussion টেবিল (ফোরাম ও আলোচনার জন্য)
-create table if not exists discussion (
+create table discussion (
   id uuid default gen_random_uuid() primary key,
   title text not null,
   author text not null,
@@ -50,7 +57,7 @@ create table if not exists discussion (
 );
 
 -- ৫. support টেবিল (হেল্পডেস্ক টিকিটের জন্য)
-create table if not exists support (
+create table support (
   id uuid default gen_random_uuid() primary key,
   title text not null,
   name text not null,

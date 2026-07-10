@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check } from 'lucide-react';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle } from 'lucide-react';
 
 const CHANNELS = [
   { id: 'general', name: 'সাধারণ আলোচনা (General)', desc: 'কমিউনিটির সবার সাথে সাধারণ কুশল বিনিময়' },
@@ -22,6 +22,7 @@ export default function Home() {
   const [tempUsername, setTempUsername] = useState('');
   const [activeRoom, setActiveRoom] = useState('general');
   const [isSending, setIsSending] = useState(false);
+  const [dbError, setDbError] = useState(null);
   
   const messagesEndRef = useRef(null);
 
@@ -55,13 +56,19 @@ export default function Home() {
         
         if (error) {
           console.error('Error fetching messages:', error);
+          if (active) {
+            setDbError(error);
+          }
           return;
         }
 
-        if (active && data) {
-          // Filter by activeRoom (client side fallback in case database query is generic)
-          const roomMessages = data.filter(msg => msg.room === activeRoom);
-          setMessages(roomMessages);
+        if (active) {
+          setDbError(null);
+          if (data) {
+            // Filter by activeRoom (client side fallback in case database query is generic)
+            const roomMessages = data.filter(msg => msg.room === activeRoom);
+            setMessages(roomMessages);
+          }
         }
       } catch (err) {
         console.error('Fetch error:', err);
@@ -114,7 +121,9 @@ export default function Home() {
       const { data, error } = await supabase.from('messages').insert(newMsg);
       if (error) {
         console.error('Error sending message:', error);
+        setDbError(error);
       } else {
+        setDbError(null);
         setInputText('');
         // Optimistic local update for instantaneous experience (if mock is used, handles this inside insert)
         if (data) {
@@ -259,6 +268,25 @@ export default function Home() {
 
         {/* Message Feed */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {dbError && (
+            <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-4 text-xs text-amber-300 space-y-2 mb-4 animate-in fade-in duration-200">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-amber-200">সুপাবেস ডাটাবেস এরর ডিটেক্টেড!</h4>
+                  <p className="mt-1 leading-relaxed text-slate-300">
+                    আপনার সুপাবেস ডাটাবেসের টেবিল স্ট্রাকচার (Schema) সঠিক নয় অথবা পুরানো টেবিল রয়ে গেছে। এর ফলে বার্তা পাঠানো বা লোড করা যাচ্ছে না।
+                  </p>
+                  <p className="mt-2 text-slate-400 font-mono text-[10px]">
+                    Error Details: {dbError.message || JSON.stringify(dbError)} (Code: {dbError.code})
+                  </p>
+                  <p className="mt-1.5 text-xs text-amber-400 font-semibold">
+                    সমাধান: পেজের উপরে থাকা সবুজ "ডাটাবেস সেটিংস দেখুন" বাটনে ক্লিক করে পুরো SQL কোডটি কপি করুন এবং আপনার Supabase SQL Editor-এ রান (Run) করুন। এটি পুরানো টেবিলগুলো ডিলিট করে সঠিক নতুন কলামসহ টেবিল তৈরি করবে।
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
               <div className="bg-slate-800 p-4 rounded-full text-slate-500">
