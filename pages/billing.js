@@ -179,7 +179,7 @@ export default function Billing() {
   });
 
   return (
-    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="billing-container">
+      <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="billing-container">
       {/* Top Header Card */}
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900 border border-blue-900/30 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl">
         <div className="space-y-2">

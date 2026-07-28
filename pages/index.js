@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical } from 'lucide-react';
 
 const PRESET_AVATARS = [
   { id: 'av-1', emoji: '🧑‍💻', bg: 'from-blue-600 to-indigo-600', label: 'কোডার' },
@@ -163,6 +165,8 @@ const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
 };
 
 export default function Home() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [username, setUsername] = useState('');
@@ -178,6 +182,14 @@ export default function Home() {
   const [selectedAvatarId, setSelectedAvatarId] = useState('av-1');
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   
+  // Custom Messenger Groups & Pin State
+  const [customGroups, setCustomGroups] = useState([]);
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
+  const [newGroupEmoji, setNewGroupEmoji] = useState('💬');
+  const [pinnedExpanded, setPinnedExpanded] = useState(false);
+
   const [selectedImage, setSelectedImage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const fileInputRef = useRef(null);
@@ -186,8 +198,39 @@ export default function Home() {
   const typingTimeoutRef = useRef(null);
   const [isTypingState, setIsTypingState] = useState(false);
 
-  // Initialize nickname and avatar
+  // Initialize nickname, avatar, active room, custom groups, and draft message from localStorage
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Restore custom groups
+      let loadedCustom = [];
+      const savedGroups = localStorage.getItem('rg_custom_groups');
+      if (savedGroups) {
+        try {
+          loadedCustom = JSON.parse(savedGroups);
+          setCustomGroups(loadedCustom);
+        } catch (e) {}
+      }
+
+      // Restore active channel / group room
+      const allValid = [...CHANNELS, ...loadedCustom];
+      const savedRoom = localStorage.getItem('rg_active_room');
+      if (savedRoom && allValid.some(c => c.id === savedRoom)) {
+        setActiveRoom(savedRoom);
+        const savedDraft = localStorage.getItem(`rg_chat_draft_${savedRoom}`);
+        if (savedDraft) setInputText(savedDraft);
+      } else {
+        const savedDraft = localStorage.getItem('rg_chat_draft_general');
+        if (savedDraft) setInputText(savedDraft);
+      }
+    }
+
+    if (user?.name) {
+      setUsername(user.name);
+      setTempUsername(user.name);
+      localStorage.setItem('rg_username', user.name);
+      return;
+    }
+
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('rg_username');
       let currentUsername = '';
@@ -212,7 +255,7 @@ export default function Home() {
         localStorage.setItem('rg_avatar_id', defaultAv.id);
       }
     }
-  }, []);
+  }, [user]);
 
   // Fetch messages and subscribe to real-time changes
   useEffect(() => {
@@ -471,6 +514,9 @@ export default function Home() {
         } else {
           setDbError(null);
           setInputText('');
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem(`rg_chat_draft_${activeRoom}`);
+          }
           setSelectedImage(null);
           if (fileInputRef.current) {
             fileInputRef.current.value = '';
@@ -493,6 +539,15 @@ export default function Home() {
     }
   };
 
+  const handleSelectRoom = (roomId) => {
+    setActiveRoom(roomId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_active_room', roomId);
+      const savedDraft = localStorage.getItem(`rg_chat_draft_${roomId}`) || '';
+      setInputText(savedDraft);
+    }
+  };
+
   const handleSaveUsername = () => {
     if (tempUsername.trim()) {
       setUsername(tempUsername.trim());
@@ -504,6 +559,10 @@ export default function Home() {
   const handleInputChange = (e) => {
     const val = e.target.value;
     setInputText(val);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`rg_chat_draft_${activeRoom}`, val);
+    }
 
     if (!isTypingState && val.trim()) {
       setIsTypingState(true);
@@ -526,10 +585,112 @@ export default function Home() {
     setIsAvatarPickerOpen(false);
   };
 
+  // Group Creation Handler
+  const handleCreateGroup = (e) => {
+    e.preventDefault();
+    if (!newGroupName.trim()) return;
+    const newGroup = {
+      id: 'group_' + Date.now(),
+      name: newGroupName.trim(),
+      desc: newGroupDesc.trim() || 'ম্যাসেঞ্জার কাস্টম গ্রুপ',
+      emoji: newGroupEmoji || '💬',
+      createdBy: username,
+      createdAt: new Date().toISOString()
+    };
+    const updatedGroups = [...customGroups, newGroup];
+    setCustomGroups(updatedGroups);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_custom_groups', JSON.stringify(updatedGroups));
+    }
+    setNewGroupName('');
+    setNewGroupDesc('');
+    setNewGroupEmoji('💬');
+    setIsCreateGroupOpen(false);
+    handleSelectRoom(newGroup.id);
+  };
+
+  // Group Delete Handler
+  const handleDeleteCustomGroup = (groupId, e) => {
+    e.stopPropagation();
+    const updated = customGroups.filter(g => g.id !== groupId);
+    setCustomGroups(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_custom_groups', JSON.stringify(updated));
+    }
+    if (activeRoom === groupId) {
+      handleSelectRoom('general');
+    }
+  };
+
+  // Message Pin Toggle Handler
+  const handleTogglePinMessage = async (msg) => {
+    let contentObj = {};
+    if (msg.content && msg.content.startsWith('{"text":')) {
+      try {
+        contentObj = JSON.parse(msg.content);
+      } catch (e) {
+        contentObj = { text: msg.content };
+      }
+    } else {
+      contentObj = { text: msg.content || '' };
+    }
+
+    const currentPinned = !!contentObj.pinned;
+    contentObj.pinned = !currentPinned;
+    const newContent = JSON.stringify(contentObj);
+
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .update({ content: newContent })
+        .eq('id', msg.id);
+
+      if (error) {
+        console.error('Pin error:', error);
+        setDbError(error);
+      } else {
+        setDbError(null);
+        // Optimistic update
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msg.id ? { ...m, content: newContent } : m))
+        );
+      }
+    } catch (err) {
+      console.error('Pin error:', err);
+    }
+  };
+
+  // Calculate combined rooms & pinned messages
+  const allRooms = [
+    ...CHANNELS.map(c => ({ ...c, isCustom: false, emoji: null })),
+    ...customGroups.map(g => ({
+      id: g.id,
+      name: g.name,
+      desc: g.desc,
+      isCustom: true,
+      emoji: g.emoji || '💬',
+      createdBy: g.createdBy
+    }))
+  ];
+  const currentRoomObj = allRooms.find(r => r.id === activeRoom) || CHANNELS[0];
+
+  const pinnedMessages = messages.filter((msg) => {
+    if (!msg.content) return false;
+    if (msg.content.startsWith('{"text":')) {
+      try {
+        const parsed = JSON.parse(msg.content);
+        return !!parsed.pinned;
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  });
+
   return (
-    <div className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto overflow-hidden bg-slate-900 border-x border-slate-800" id="chat-applet">
-      {/* Left Sidebar - Channels & Profiles */}
-      <div className="w-full md:w-80 bg-slate-950 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col flex-shrink-0">
+      <div className="flex-1 flex flex-col lg:flex-row w-full h-[calc(100vh-3.5rem)] min-h-[500px] overflow-hidden bg-slate-900 border-x border-slate-800/80" id="chat-applet">
+        {/* Left Sidebar - Channels & Profiles */}
+        <div className="w-full lg:w-80 bg-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col flex-shrink-0 h-auto lg:h-full overflow-hidden">
         
         {/* Profile Card */}
         <div className="p-4 border-b border-slate-800 bg-slate-900/50">
@@ -643,7 +804,7 @@ export default function Home() {
                 return (
                   <button
                     key={channel.id}
-                    onClick={() => setActiveRoom(channel.id)}
+                    onClick={() => handleSelectRoom(channel.id)}
                     className={`w-full text-left flex items-start gap-3 p-2.5 rounded-xl transition duration-150 ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/10'
@@ -663,6 +824,76 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Custom Messenger Groups Section */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <div className="flex items-center justify-between px-2 mb-2">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-blue-400" />
+                <span>কাস্টম মেসেঞ্জার গ্রুপ</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsCreateGroupOpen(true)}
+                className="text-[11px] bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white px-2 py-1 rounded-lg border border-blue-500/30 font-semibold flex items-center gap-1 transition active:scale-95 shadow-sm"
+                title="নতুন মেসেঞ্জার গ্রুপ তৈরি করুন"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>গ্রুপ তৈরি</span>
+              </button>
+            </div>
+
+            {customGroups.length === 0 ? (
+              <div className="p-3 bg-slate-900/40 border border-dashed border-slate-800 rounded-xl text-center space-y-1.5">
+                <p className="text-[11px] text-slate-400">কোনো কাস্টম মেসেঞ্জার গ্রুপ নেই</p>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGroupOpen(true)}
+                  className="text-xs text-blue-400 hover:text-blue-300 font-bold underline inline-flex items-center gap-1"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  নতুন গ্রুপ তৈরি করুন
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {customGroups.map((group) => {
+                  const isActive = activeRoom === group.id;
+                  return (
+                    <div
+                      key={group.id}
+                      onClick={() => handleSelectRoom(group.id)}
+                      className={`w-full text-left flex items-center justify-between gap-2 p-2.5 rounded-xl transition duration-150 cursor-pointer group/grp ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                          : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5 truncate min-w-0">
+                        <span className="text-base flex-shrink-0 mt-0.5">{group.emoji || '💬'}</span>
+                        <div className="truncate">
+                          <p className="text-sm font-semibold truncate">{group.name}</p>
+                          <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
+                            {group.desc}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* Delete group button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteCustomGroup(group.id, e)}
+                        className="opacity-0 group-hover/grp:opacity-100 text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-950/60 transition flex-shrink-0"
+                        title="গ্রুপ রিমুভ করুন"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Guidelines / Help box */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 space-y-2">
             <h5 className="font-bold text-slate-300 flex items-center gap-1.5">
@@ -677,17 +908,26 @@ export default function Home() {
       </div>
 
       {/* Right Chat Area */}
-      <div className="flex-1 flex flex-col bg-slate-900/40 h-[65vh] md:h-[80vh] overflow-hidden">
+      <div className="flex-1 flex flex-col bg-slate-900/40 h-full overflow-hidden relative min-w-0">
         {/* Chat Room Header */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/80 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Hash className="w-5 h-5 text-blue-500" />
+        <div className="px-4 md:px-6 py-3.5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between flex-shrink-0 z-10">
+          <div className="flex items-center gap-2.5">
+            {currentRoomObj.isCustom ? (
+              <span className="text-xl flex-shrink-0">{currentRoomObj.emoji || '💬'}</span>
+            ) : (
+              <Hash className="w-5 h-5 text-blue-500" />
+            )}
             <div>
-              <h3 className="text-base font-bold text-white">
-                {CHANNELS.find(c => c.id === activeRoom)?.name}
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>{currentRoomObj.name}</span>
+                {currentRoomObj.isCustom && (
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-normal">
+                    কাস্টম গ্রুপ
+                  </span>
+                )}
               </h3>
               <p className="text-xs text-slate-400">
-                {CHANNELS.find(c => c.id === activeRoom)?.desc}
+                {currentRoomObj.desc}
               </p>
             </div>
           </div>
@@ -696,6 +936,61 @@ export default function Home() {
             <span className="font-mono">কমিউনিটি লাইভ</span>
           </div>
         </div>
+
+        {/* Pinned Messages Banner */}
+        {pinnedMessages.length > 0 && (
+          <div className="bg-slate-950/90 border-b border-slate-800 px-4 py-2 flex flex-col gap-2 transition duration-200 z-10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs text-amber-400 font-bold">
+                <Pin className="w-3.5 h-3.5 fill-amber-400 text-amber-400 animate-pulse" />
+                <span>📌 পিন করা চ্যাট বার্তা ({pinnedMessages.length}টি)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPinnedExpanded(!pinnedExpanded)}
+                className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 font-mono transition"
+              >
+                {pinnedExpanded ? 'সংকুচিত করুন' : 'সব দেখুন'}
+                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${pinnedExpanded ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            <div className={`space-y-1.5 ${pinnedExpanded ? 'max-h-48 overflow-y-auto' : 'max-h-8 overflow-hidden'}`}>
+              {pinnedMessages.map((pMsg) => {
+                let pText = pMsg.content;
+                try {
+                  pText = JSON.parse(pMsg.content).text;
+                } catch (e) {}
+                return (
+                  <div 
+                    key={pMsg.id}
+                    onClick={() => scrollToMessage(pMsg.id)}
+                    className="flex items-center justify-between gap-3 bg-slate-900/90 hover:bg-slate-800 p-2 rounded-xl border border-amber-500/30 text-xs cursor-pointer group/pin transition"
+                  >
+                    <div className="flex items-center gap-2 truncate min-w-0">
+                      <span className="font-bold text-amber-300 truncate max-w-[110px]">{pMsg.sender}:</span>
+                      <span className="text-slate-200 truncate">{pText}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-slate-500 group-hover/pin:text-blue-400 font-medium">লাফিয়ে যান →</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTogglePinMessage(pMsg);
+                        }}
+                        className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-slate-950 transition"
+                        title="আনপিন করুন"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Message Feed */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -736,6 +1031,7 @@ export default function Home() {
               let isReply = false;
               let replyInfo = null;
               let isEdited = false;
+              let isPinned = false;
               let contentText = msg.content;
               let messageAvatarId = null;
               let messageImage = null;
@@ -747,6 +1043,7 @@ export default function Home() {
                   replyInfo = parsed.replyTo;
                   isReply = !!replyInfo;
                   isEdited = !!parsed.edited;
+                  isPinned = !!parsed.pinned;
                   messageAvatarId = parsed.avatar;
                   messageImage = parsed.image;
                 } catch (e) {
@@ -796,7 +1093,16 @@ export default function Home() {
                         isMe 
                           ? 'bg-blue-600 text-white rounded-tr-none' 
                           : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/60'
-                      }`}>
+                      } ${isPinned ? 'ring-1 ring-amber-400/80 shadow-md shadow-amber-500/10' : ''}`}>
+                        
+                        {/* Pinned Badge inside Bubble */}
+                        {isPinned && (
+                          <div className="mb-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded-full w-fit">
+                            <Pin className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            <span>পিন করা বার্তা</span>
+                          </div>
+                        )}
+
                         {/* Quoted Reply Box */}
                         {isReply && replyInfo && (
                           <div 
@@ -887,6 +1193,18 @@ export default function Home() {
                         <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 ${
                           isMe ? 'mr-2 order-first' : 'ml-2'
                         }`}>
+                          <button 
+                            onClick={() => handleTogglePinMessage(msg)}
+                            className={`p-1.5 rounded-lg transition shadow-md border ${
+                              isPinned 
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30' 
+                                : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/30'
+                            }`}
+                            title={isPinned ? "আনপিন করুন" : "বার্তাটি পিন করুন"}
+                            type="button"
+                          >
+                            <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-amber-400 text-amber-400' : ''}`} />
+                          </button>
                           <button 
                             onClick={() => handleReplyTo(msg)}
                             className="p-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition shadow-md border border-slate-700/30"
@@ -981,7 +1299,7 @@ export default function Home() {
         )}
 
         {/* Chat Input Bar */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 bg-slate-900/80">
+        <form onSubmit={handleSendMessage} className="p-3 md:p-4 border-t border-slate-800 bg-slate-900/95 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
           {/* Quick Emoji Panel */}
           <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-800 select-none">
             <span className="text-[11px] text-slate-500 font-medium mr-1 flex items-center gap-1">
@@ -1089,6 +1407,100 @@ export default function Home() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* Create Custom Messenger Group Modal */}
+      {isCreateGroupOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setIsCreateGroupOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-3 bg-blue-600/20 text-blue-400 rounded-xl border border-blue-500/30">
+                <FolderPlus className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">নতুন মেসেঞ্জার গ্রুপ তৈরি করুন</h3>
+                <p className="text-xs text-slate-400 mt-0.5">আপনার বন্ধুদের সাথে চ্যাট করতে কাস্টম গ্রুপ খুলুন</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateGroup} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  গ্রুপের নাম <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="যেমন: ডেভেলপার আড্ডা, বন্ধু মহল..."
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 text-white text-sm px-3.5 py-2.5 rounded-xl focus:outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  গ্রুপ ইমোজি/আইকন
+                </label>
+                <div className="flex items-center gap-2">
+                  {['💬', '🚀', '🔥', '🎮', '⚽', '💡', '🎉', '❤️'].map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setNewGroupEmoji(emoji)}
+                      className={`text-xl p-2 rounded-xl border transition ${
+                        newGroupEmoji === emoji
+                          ? 'bg-blue-600/30 border-blue-500 scale-110'
+                          : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  গ্রুপের বিবরণ
+                </label>
+                <input
+                  type="text"
+                  placeholder="গ্রুপের উদ্দেশ্য বা নিয়মকানুনের সংক্ষেপ..."
+                  value={newGroupDesc}
+                  onChange={(e) => setNewGroupDesc(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 text-white text-sm px-3.5 py-2.5 rounded-xl focus:outline-none transition"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGroupOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newGroupName.trim()}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/20 transition flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  গ্রুপ তৈরি করুন
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      </div>
   );
 }

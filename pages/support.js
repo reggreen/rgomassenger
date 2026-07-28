@@ -186,7 +186,7 @@ export default function Support() {
   });
 
   return (
-    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="support-container">
+      <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="support-container">
       {/* Supabase Connection Status Banner */}
       <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900/40">
         <SupabaseBanner />

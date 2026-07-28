@@ -268,7 +268,7 @@ export default function Tasks() {
   const alertedCount = tasks.filter(t => t.alerted).length;
 
   return (
-    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="tasks-container">
+      <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="tasks-container">
       {/* Top Banner Board */}
       <div className="bg-gradient-to-r from-violet-950/40 to-slate-900 border border-violet-900/30 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl">
         <div className="space-y-2">

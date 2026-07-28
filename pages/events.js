@@ -263,7 +263,7 @@ export default function Events() {
   };
 
   return (
-    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="events-container">
+      <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="events-container">
       {toastMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-emerald-600/95 border border-emerald-500/30 backdrop-blur-md text-white font-bold px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 max-w-md w-full mx-4 sm:mx-0">
           <Bell className="w-5 h-5 text-emerald-100 animate-bounce" />

@@ -184,7 +184,7 @@ export default function Discussion() {
   });
 
   return (
-    <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="discussion-container">
+      <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="discussion-container">
       {/* Top Welcome Board */}
       <div className="bg-gradient-to-r from-indigo-900/40 to-slate-900 border border-indigo-900/30 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl">
         <div className="space-y-2">
