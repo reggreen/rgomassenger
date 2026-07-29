@@ -2,7 +2,44 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical } from 'lucide-react';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code } from 'lucide-react';
+
+const SUPABASE_SQL_SCRIPT = `-- =========================================================
+-- COMPLETE SUPABASE SCHEMA & RLS FIX SCRIPT FOR RGOMASSENGER
+-- =========================================================
+
+-- 1. MESSAGES TABLE
+CREATE TABLE IF NOT EXISTS public.messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room text NOT NULL DEFAULT 'general',
+  sender text NOT NULL DEFAULT 'Anonymous',
+  content text NOT NULL DEFAULT '',
+  created_at timestamp with time zone DEFAULT now()
+);
+
+-- Ensure all columns exist in case table was created differently
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS room text DEFAULT 'general';
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sender text DEFAULT 'Anonymous';
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS content text DEFAULT '';
+
+-- Enable RLS and grant full public permissions (Read/Insert/Update/Delete)
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public select messages" ON public.messages;
+CREATE POLICY "Public select messages" ON public.messages FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public insert messages" ON public.messages;
+CREATE POLICY "Public insert messages" ON public.messages FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public update messages" ON public.messages;
+CREATE POLICY "Public update messages" ON public.messages FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Public delete messages" ON public.messages;
+CREATE POLICY "Public delete messages" ON public.messages FOR DELETE USING (true);
+
+-- Enable Realtime for Messages
+ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+`;
 
 const PRESET_AVATARS = [
   { id: 'av-1', emoji: '🧑‍💻', bg: 'from-blue-600 to-indigo-600', label: 'কোডার' },
@@ -194,6 +231,17 @@ export default function Home() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const fileInputRef = useRef(null);
 
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const handleCopySql = () => {
+    if (typeof window !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(SUPABASE_SQL_SCRIPT);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 3000);
+    }
+  };
+
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const [isTypingState, setIsTypingState] = useState(false);
@@ -308,6 +356,11 @@ export default function Home() {
               setMessages((prev) => {
                 // Avoid duplicate messages
                 if (prev.some(msg => msg.id === payload.new.id)) return prev;
+                // Replace any optimistic temporary message with matching content and sender
+                const hasTemp = prev.some(m => typeof m.id === 'string' && m.id.startsWith('temp_') && m.sender === payload.new.sender && m.content === payload.new.content);
+                if (hasTemp) {
+                  return prev.map(m => (typeof m.id === 'string' && m.id.startsWith('temp_') && m.sender === payload.new.sender && m.content === payload.new.content) ? payload.new : m);
+                }
                 return [...prev, payload.new];
               });
             }
@@ -500,6 +553,29 @@ export default function Home() {
         });
       }
 
+      const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const optimisticMsg = {
+        id: tempId,
+        room: activeRoom,
+        sender: username,
+        content: finalContent,
+        created_at: new Date().toISOString()
+      };
+
+      // 1. Instantly update UI optimistically (0ms delay)
+      setMessages((prev) => [...prev, optimisticMsg]);
+
+      // 2. Clear input fields immediately for instant feedback
+      setInputText('');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(`rg_chat_draft_${activeRoom}`);
+      }
+      setSelectedImage(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setReplyingToMessage(null);
+
       const newMsg = {
         room: activeRoom,
         sender: username,
@@ -507,28 +583,20 @@ export default function Home() {
       };
 
       try {
-        const { data, error } = await supabase.from('messages').insert(newMsg);
+        const { data, error } = await supabase
+          .from('messages')
+          .insert(newMsg)
+          .select();
+
         if (error) {
           console.error('Error sending message:', error);
           setDbError(error);
         } else {
           setDbError(null);
-          setInputText('');
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem(`rg_chat_draft_${activeRoom}`);
-          }
-          setSelectedImage(null);
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-          }
-          setReplyingToMessage(null);
-          
-          // Optimistic local update
-          if (data) {
-            setMessages((prev) => {
-              if (prev.some(msg => msg.id === data[0].id)) return prev;
-              return [...prev, data[0]];
-            });
+          if (data && data.length > 0) {
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === tempId ? data[0] : msg))
+            );
           }
         }
       } catch (err) {
@@ -931,9 +999,20 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1 text-slate-400 text-xs">
-            <Users className="w-4 h-4 text-slate-500" />
-            <span className="font-mono">কমিউনিটি লাইভ</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSqlModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-bold transition shadow-sm"
+              title="ডাটাবেস সেটিংস ও SQL ফিক্স গাইড"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">SQL সেটিংস</span>
+            </button>
+            <div className="flex items-center gap-1 text-slate-400 text-xs">
+              <Users className="w-4 h-4 text-slate-500" />
+              <span className="font-mono">কমিউনিটি লাইভ</span>
+            </div>
           </div>
         </div>
 
@@ -998,17 +1077,24 @@ export default function Home() {
             <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-4 text-xs text-amber-300 space-y-2 mb-4 animate-in fade-in duration-200">
               <div className="flex items-start gap-2.5">
                 <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-bold text-amber-200">সুপাবেস ডাটাবেস এরর ডিটেক্টেড!</h4>
-                  <p className="mt-1 leading-relaxed text-slate-300">
-                    আপনার সুপাবেস ডাটাবেসের টেবিল স্ট্রাকচার (Schema) সঠিক নয় অথবা পুরানো টেবিল রয়ে গেছে। এর ফলে বার্তা পাঠানো বা লোড করা যাচ্ছে না।
+                <div className="space-y-1.5 flex-1">
+                  <h4 className="font-bold text-amber-200">সুপাবেস ডাটাবেস সতর্কবার্তা!</h4>
+                  <p className="leading-relaxed text-slate-300">
+                    আপনার সুপাবেস ডাটাবেসে RLS পারমিশন অথবা কলাম স্ট্রাকচার সংক্রান্ত ইস্যু ডিটেক্ট হয়েছে। (মেসেজ অফলাইনে আদান-প্রদান চালু আছে)
                   </p>
-                  <p className="mt-2 text-slate-400 font-mono text-[10px]">
-                    Error Details: {dbError.message || JSON.stringify(dbError)} (Code: {dbError.code})
+                  <p className="text-slate-400 font-mono text-[10px] bg-slate-950/60 p-1.5 rounded border border-amber-900/40">
+                    Error Details: {dbError.message || JSON.stringify(dbError)} {dbError.code ? `(Code: ${dbError.code})` : ''}
                   </p>
-                  <p className="mt-1.5 text-xs text-amber-400 font-semibold">
-                    সমাধান: পেজের উপরে থাকা সবুজ "ডাটাবেস সেটিংস দেখুন" বাটনে ক্লিক করে পুরো SQL কোডটি কপি করুন এবং আপনার Supabase SQL Editor-এ রান (Run) করুন। এটি পুরানো টেবিলগুলো ডিলিট করে সঠিক নতুন কলামসহ টেবিল তৈরি করবে।
-                  </p>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsSqlModalOpen(true)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs inline-flex items-center gap-1.5 transition shadow"
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span>সুপাবেস SQL সমাধান গাইড দেখুন</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1404,6 +1490,90 @@ export default function Home() {
               className="max-h-[80vh] max-w-full rounded-2xl object-contain shadow-2xl border border-slate-850"
               onClick={(e) => e.stopPropagation()}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Supabase SQL Fix Modal */}
+      {isSqlModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">সুপাবেস ডাটাবেস ও SQL ফিক্স গাইড</h3>
+                  <p className="text-xs text-slate-400">PGRST204 বা RLS এরর দূর করতে নিচের SQL কোডটি রান করুন</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                <h4 className="font-bold text-emerald-400 flex items-center gap-1.5 text-xs">
+                  <CheckCircle className="w-4 h-4" />
+                  সহজ ৩ ধাপে ডাটাবেস ফিক্স করুন:
+                </h4>
+                <ol className="list-decimal list-inside space-y-1.5 text-slate-300 leading-relaxed pl-1">
+                  <li>আপনার <strong className="text-white">Supabase Dashboard</strong> এ প্রবেশ করে প্রজেক্ট সিলেক্ট করুন।</li>
+                  <li>বাম পাশের মেনু থেকে <strong className="text-emerald-300">SQL Editor</strong> এ যান।</li>
+                  <li>নিচের SQL কোডটি কপি করে পেস্ট করুন এবং <strong className="text-emerald-300">Run</strong> বাটনে চাপুন।</li>
+                </ol>
+              </div>
+
+              {/* SQL Code Box */}
+              <div className="relative">
+                <div className="flex items-center justify-between bg-slate-950 px-4 py-2 border-t border-x border-slate-800 rounded-t-xl text-slate-400 font-mono text-[11px]">
+                  <span className="flex items-center gap-1.5">
+                    <Code className="w-3.5 h-3.5 text-emerald-400" />
+                    fix_messages_table.sql
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopySql}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-sans font-bold transition text-xs shadow-sm"
+                  >
+                    {copiedSql ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>কপি হয়েছে!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>কপি করুন (Copy SQL)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="p-4 bg-slate-950 text-emerald-300 font-mono text-[11px] leading-relaxed rounded-b-xl border border-slate-800 overflow-x-auto max-h-60 select-all">
+                  {SUPABASE_SQL_SCRIPT}
+                </pre>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">SQL রান করার পর পেজটি রিলোড দিন।</span>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition text-xs"
+              >
+                বন্ধ করুন
+              </button>
+            </div>
           </div>
         </div>
       )}
