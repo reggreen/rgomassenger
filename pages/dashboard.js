@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
   Bell,
@@ -22,10 +23,14 @@ import {
   ShieldCheck,
   RefreshCw,
   FolderPlus,
-  DollarSign
+  DollarSign,
+  Shield,
+  Lock,
+  UserCheck
 } from 'lucide-react';
 
 export default function Dashboard() {
+  const { user, isAdmin, isModerator, userRole, demoLogin } = useAuth();
   const [stats, setStats] = useState({
     pendingTasks: 0,
     urgentTasks: 0,
@@ -194,6 +199,171 @@ export default function Dashboard() {
               <Plus className="w-4 h-4" />
               <span>নতুন টাস্ক</span>
             </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Role Verification & Access Security Card */}
+      <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white">ইউজার রোল ও সিকিউরিটি লেয়ার</h3>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">
+                  সক্রিয় প্রোটেক্টেড রুট
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                আপনার বর্তমান রোল যাচাই করে বিভিন্ন চ্যাট চ্যানেল এবং অ্যাডমিন প্যানেলে প্রবেশাধিকার নির্ধারিত হয়।
+              </p>
+            </div>
+          </div>
+
+          {/* Current User Badge */}
+          <div className="flex items-center gap-3 bg-slate-950 p-2.5 rounded-xl border border-slate-800/90 w-full md:w-auto">
+            <span className="text-2xl">{user?.avatar_emoji || '🧑‍💻'}</span>
+            <div className="min-w-0 pr-2">
+              <p className="text-xs font-bold text-white truncate">{user?.name || 'ইউজার'}</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                {isAdmin ? (
+                  <span className="text-[10px] font-extrabold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2 py-0.2 rounded-full">
+                    👑 অ্যাডমিন (Admin)
+                  </span>
+                ) : isModerator ? (
+                  <span className="text-[10px] font-extrabold text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.2 rounded-full">
+                    🛡️ মডারেটর (Moderator)
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.2 rounded-full">
+                    🚀 সদস্য (Member)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Channel & Panel Permissions Matrix */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Item 1: Member Public Channels */}
+          <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span>পাবলিক চ্যাট চ্যানেল</span>
+              </span>
+              <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold">
+                উন্মুক্ত
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              #general, #tech-talk, #fun - সকল ভেরিফাইড সদস্যের জন্য উন্মুক্ত।
+            </p>
+            <div className="pt-1 flex items-center justify-between text-[10px] text-emerald-400 font-bold">
+              <span>প্রবেশাধিকার: ✅ অনুমোদিত</span>
+              <Link href="/" className="hover:underline text-blue-400">চ্যাটে যান →</Link>
+            </div>
+          </div>
+
+          {/* Item 2: Moderator Channels */}
+          <div className={`p-3.5 rounded-xl border space-y-2 ${
+            isModerator
+              ? 'bg-indigo-950/20 border-indigo-800/40 text-indigo-200'
+              : 'bg-slate-950/30 border-slate-800/50 text-slate-500'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                <span>ঘোষণা ও আপডেট চ্যানেল</span>
+              </span>
+              <span className="text-[9px] bg-indigo-500/15 text-indigo-300 px-1.5 py-0.5 rounded font-mono font-bold">
+                মডারেটর+
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              #announcements - পোস্ট বা প্রকাশের জন্য মডারেটর অথবা অ্যাডমিন রোল আবশ্যক।
+            </p>
+            <div className="pt-1 flex items-center justify-between text-[10px]">
+              {isModerator ? (
+                <span className="text-emerald-400 font-bold">প্রবেশাধিকার: ✅ পোস্ট করার অনুমতি আছে</span>
+              ) : (
+                <span className="text-amber-400 font-bold">প্রবেশাধিকার: 🔒 পোস্ট করতে মডারেটর রোল প্রয়োজন</span>
+              )}
+            </div>
+          </div>
+
+          {/* Item 3: Admin Only Lounge */}
+          <div className={`p-3.5 rounded-xl border space-y-2 ${
+            isAdmin
+              ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
+              : 'bg-slate-950/30 border-slate-800/50 text-slate-500'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>অ্যাডমিন লাউঞ্জ & বিলিং</span>
+              </span>
+              <span className="text-[9px] bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-mono font-bold">
+                অ্যাডমিন অনলি
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              #admin-lounge এবং বিলিং/ফান্ডিং প্যানেলে স্পেশাল অ্যাডমিনিস্ট্রেটিভ অ্যাকশন।
+            </p>
+            <div className="pt-1 flex items-center justify-between text-[10px]">
+              {isAdmin ? (
+                <span className="text-emerald-400 font-bold">প্রবেশাধিকার: ✅ অ্যাডমিন ফুল কন্ট্রোল</span>
+              ) : (
+                <span className="text-rose-400 font-bold">প্রবেশাধিকার: 🔐 শুধুমাত্র অ্যাডমিন</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Demo Role Switcher Bar */}
+        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-slate-300">
+            <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span className="font-semibold">রোল ভেরিফিকেশন টেস্ট করতে ১-ক্লিকে সুইচ করুন:</span>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => demoLogin('admin')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                isAdmin
+                  ? 'bg-amber-500 text-slate-950 font-extrabold ring-2 ring-amber-400/50'
+                  : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30'
+              }`}
+            >
+              <span>🧑‍💻 অ্যাডমিন</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => demoLogin('moderator')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                isModerator && !isAdmin
+                  ? 'bg-indigo-600 text-white font-extrabold ring-2 ring-indigo-400/50'
+                  : 'bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-500/30'
+              }`}
+            >
+              <span>🦁 মডারেটর</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => demoLogin('member')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                !isModerator
+                  ? 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-400/50'
+                  : 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30'
+              }`}
+            >
+              <span>🚀 সদস্য</span>
+            </button>
           </div>
         </div>
       </div>

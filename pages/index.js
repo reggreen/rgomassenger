@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code } from 'lucide-react';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload } from 'lucide-react';
 
 const SUPABASE_SQL_SCRIPT = `-- =========================================================
 -- COMPLETE SUPABASE SCHEMA & RLS FIX SCRIPT FOR RGOMASSENGER
@@ -63,10 +63,11 @@ const getAvatarForUsername = (name) => {
 };
 
 const CHANNELS = [
-  { id: 'general', name: 'সাধারণ আলোচনা (General)', desc: 'কমিউনিটির সবার সাথে সাধারণ কুশল বিনিময়' },
-  { id: 'announcements', name: 'ঘোষণা ও আপডেট (Updates)', desc: 'কমিউনিটির গুরুত্বপূর্ণ নোটিশ ও ভবিষ্যৎ পরিকল্পনা' },
-  { id: 'tech-talk', name: 'টেক আড্ডা (Tech)', desc: 'কোডিং, ডিজাইন ও প্রযুক্তি বিষয়ক আলোচনা' },
-  { id: 'fun', name: 'বিনোদন ও আড্ডা (Fun)', desc: 'হাসি-ঠাট্টা ও হালকা বিনোদন' }
+  { id: 'general', name: 'সাধারণ আলোচনা (General)', desc: 'কমিউনিটির সবার সাথে সাধারণ কুশল বিনিময়', minRole: 'member', minRoleLabel: 'সকল সদস্য' },
+  { id: 'tech-talk', name: 'টেক আড্ডা (Tech)', desc: 'কোডিং, ডিজাইন ও প্রযুক্তি বিষয়ক আলোচনা', minRole: 'member', minRoleLabel: 'সকল সদস্য' },
+  { id: 'fun', name: 'বিনোদন ও আড্ডা (Fun)', desc: 'হাসি-ঠাট্টা ও হালকা বিনোদন', minRole: 'member', minRoleLabel: 'সকল সদস্য' },
+  { id: 'announcements', name: 'ঘোষণা ও আপডেট (Updates)', desc: 'কমিউনিটির অফিসিয়াল নোটিশ বোর্ড (মডারেটর ও অ্যাডমিন পোস্ট)', minRole: 'moderator', minRoleLabel: 'মডারেটর ও অ্যাডমিন' },
+  { id: 'admin-lounge', name: 'অ্যাডমিন লাউঞ্জ (Admin Only)', desc: 'গোপন ও সংরক্ষিত অ্যাডমিন স্ট্র্যাটেজি চ্যানেল', minRole: 'admin', minRoleLabel: 'শুধুমাত্র অ্যাডমিন' }
 ];
 
 const PRESET_NAMES = [
@@ -203,7 +204,7 @@ const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
 
 export default function Home() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isAdmin, isModerator, userRole } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [username, setUsername] = useState('');
@@ -217,7 +218,10 @@ export default function Home() {
   const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [typingUsers, setTypingUsers] = useState({});
   const [selectedAvatarId, setSelectedAvatarId] = useState('av-1');
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(null);
+  const [profilesMap, setProfilesMap] = useState({});
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const profileFileInputRef = useRef(null);
   
   // Custom Messenger Groups & Pin State
   const [customGroups, setCustomGroups] = useState([]);
@@ -233,6 +237,10 @@ export default function Home() {
 
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  // Online Users & Realtime Presence state
+  const [onlineUsers, setOnlineUsers] = useState({});
+  const [isOnlineListOpen, setIsOnlineListOpen] = useState(false);
 
   const handleCopySql = () => {
     if (typeof window !== 'undefined' && navigator.clipboard) {
@@ -272,16 +280,14 @@ export default function Home() {
       }
     }
 
+    let currentUsername = '';
     if (user?.name) {
       setUsername(user.name);
       setTempUsername(user.name);
       localStorage.setItem('rg_username', user.name);
-      return;
-    }
-
-    if (typeof window !== 'undefined') {
+      currentUsername = user.name;
+    } else if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('rg_username');
-      let currentUsername = '';
       if (saved) {
         setUsername(saved);
         setTempUsername(saved);
@@ -293,16 +299,49 @@ export default function Home() {
         localStorage.setItem('rg_username', randomName);
         currentUsername = randomName;
       }
+    }
 
-      const savedAvatar = localStorage.getItem('rg_avatar_id');
-      if (savedAvatar) {
-        setSelectedAvatarId(savedAvatar);
+    if (typeof window !== 'undefined') {
+      const savedCustomAvatar = user?.custom_avatar_url || localStorage.getItem('rg_custom_avatar_url');
+      if (savedCustomAvatar) {
+        setCustomAvatarUrl(savedCustomAvatar);
+        setSelectedAvatarId('custom');
       } else {
-        const defaultAv = getAvatarForUsername(currentUsername);
-        setSelectedAvatarId(defaultAv.id);
-        localStorage.setItem('rg_avatar_id', defaultAv.id);
+        const savedAvatar = localStorage.getItem('rg_avatar_id');
+        if (savedAvatar) {
+          setSelectedAvatarId(savedAvatar);
+        } else {
+          const defaultAv = getAvatarForUsername(currentUsername || 'ইউজার');
+          setSelectedAvatarId(defaultAv.id);
+          localStorage.setItem('rg_avatar_id', defaultAv.id);
+        }
       }
     }
+  }, [user]);
+
+  // Fetch Supabase user profiles map for avatar resolution
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      try {
+        const { data, error } = await supabase.from('profiles').select('*');
+        if (data && data.length > 0) {
+          const map = {};
+          data.forEach((p) => {
+            const avatarUrl = p.custom_avatar_url || p.avatar_url;
+            if (avatarUrl) {
+              if (p.full_name) map[p.full_name] = avatarUrl;
+              if (p.nickname) map[p.nickname] = avatarUrl;
+              if (p.email) map[p.email] = avatarUrl;
+              if (p.id) map[p.id] = avatarUrl;
+            }
+          });
+          setProfilesMap(map);
+        }
+      } catch (e) {
+        console.error('Error fetching profiles map:', e);
+      }
+    };
+    fetchProfiles();
   }, [user]);
 
   // Fetch messages and subscribe to real-time changes
@@ -396,10 +435,188 @@ export default function Home() {
     };
   }, [activeRoom, username]);
 
+  // Realtime Presence & Active Users tracking
+  useEffect(() => {
+    if (!username) return;
+
+    const currentAvatar = selectedAvatarId;
+    const currentRoom = activeRoom;
+    const myPresenceObj = {
+      username,
+      avatarId: currentAvatar,
+      customAvatarUrl: customAvatarUrl,
+      room: currentRoom,
+      lastSeen: Date.now()
+    };
+
+    // 1. Supabase Presence Channel
+    const presenceChan = supabase.channel('online_presence', {
+      config: { presence: { key: username } }
+    });
+
+    const syncPresences = () => {
+      const state = presenceChan.presenceState();
+      const updated = {};
+
+      // Always include current user
+      updated[username] = myPresenceObj;
+
+      Object.keys(state).forEach((key) => {
+        const presences = state[key];
+        if (presences && presences.length > 0) {
+          const p = presences[presences.length - 1];
+          updated[key] = {
+            username: key,
+            avatarId: p.avatarId || getAvatarForUsername(key).id,
+            customAvatarUrl: p.customAvatarUrl || (key === username ? customAvatarUrl : null),
+            room: p.room || 'general',
+            lastSeen: Date.now()
+          };
+        }
+      });
+
+      setOnlineUsers((prev) => ({ ...prev, ...updated }));
+    };
+
+    presenceChan
+      .on('presence', { event: 'sync' }, syncPresences)
+      .on('presence', { event: 'join' }, () => syncPresences())
+      .on('presence', { event: 'leave' }, () => syncPresences())
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await presenceChan.track({
+              username,
+              avatarId: currentAvatar,
+              customAvatarUrl: customAvatarUrl,
+              room: currentRoom,
+              onlineAt: new Date().toISOString()
+            });
+          } catch (e) {
+            console.warn('Presence track error:', e);
+          }
+        }
+      });
+
+    // 2. BroadcastChannel + LocalStorage Heartbeat (works across tabs in mock and real mode)
+    let bc = null;
+    let intervalId = null;
+
+    if (typeof window !== 'undefined') {
+      if ('BroadcastChannel' in window) {
+        try {
+          bc = new BroadcastChannel('rg_presence_channel');
+        } catch (e) {}
+      }
+
+      const sendHeartbeat = () => {
+        const timestamp = Date.now();
+        const hb = {
+          type: 'HEARTBEAT',
+          user: username,
+          avatarId: currentAvatar,
+          customAvatarUrl: customAvatarUrl,
+          room: currentRoom,
+          timestamp
+        };
+
+        if (bc) {
+          try {
+            bc.postMessage(hb);
+          } catch (e) {}
+        }
+
+        // Sync local storage store
+        try {
+          const stored = JSON.parse(localStorage.getItem('rg_online_store') || '{}');
+          stored[username] = {
+            username,
+            avatarId: currentAvatar,
+            customAvatarUrl: customAvatarUrl,
+            room: currentRoom,
+            lastSeen: timestamp
+          };
+          // Filter stale entries > 30 seconds
+          const now = Date.now();
+          Object.keys(stored).forEach((k) => {
+            if (now - (stored[k].lastSeen || 0) > 30000) {
+              delete stored[k];
+            }
+          });
+          localStorage.setItem('rg_online_store', JSON.stringify(stored));
+
+          setOnlineUsers((prev) => {
+            const merged = { ...prev, ...stored };
+            merged[username] = myPresenceObj;
+            return merged;
+          });
+        } catch (err) {}
+      };
+
+      if (bc) {
+        bc.onmessage = (event) => {
+          if (event.data && event.data.type === 'HEARTBEAT') {
+            const { user, avatarId, customAvatarUrl: remoteCustomAv, room, timestamp } = event.data;
+            setOnlineUsers((prev) => ({
+              ...prev,
+              [user]: {
+                username: user,
+                avatarId,
+                customAvatarUrl: remoteCustomAv,
+                room,
+                lastSeen: timestamp
+              }
+            }));
+          }
+        };
+      }
+
+      sendHeartbeat();
+      intervalId = setInterval(sendHeartbeat, 6000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      try { presenceChan.unsubscribe(); } catch (e) {}
+    };
+  }, [username, selectedAvatarId, activeRoom, customAvatarUrl]);
+
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const [roomAccessError, setRoomAccessError] = useState(null);
+
+  const handleSelectRoom = (roomId) => {
+    const targetChannel = CHANNELS.find(c => c.id === roomId);
+    if (targetChannel && targetChannel.minRole) {
+      if (targetChannel.minRole === 'admin' && !isAdmin) {
+        setRoomAccessError({
+          title: 'অ্যাডমিন অ্যাক্সেস সংরক্ষিত',
+          message: `"${targetChannel.name}" চ্যানেলটিতে প্রবেশ করতে "অ্যাডমিন" রোল প্রয়োজন। আপনার বর্তমান রোল: "${user?.role || 'সদস্য'}"।`
+        });
+        return;
+      }
+      if (targetChannel.minRole === 'moderator' && !isModerator) {
+        setRoomAccessError({
+          title: 'মডারেটর ও অ্যাডমিন অ্যাক্সেস সংরক্ষিত',
+          message: `"${targetChannel.name}" চ্যানেলটিতে প্রবেশ করতে "মডারেটর" বা "অ্যাডমিন" রোল প্রয়োজন। আপনার বর্তমান রোল: "${user?.role || 'সদস্য'}"।`
+        });
+        return;
+      }
+    }
+    setActiveRoom(roomId);
+    setRoomAccessError(null);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_active_room', roomId);
+      const savedDraft = localStorage.getItem(`rg_chat_draft_${roomId}`) || '';
+      setInputText(savedDraft);
+    }
+  };
 
   const scrollToMessage = (msgId) => {
     const element = document.getElementById(`msg-${msgId}`);
@@ -494,6 +711,7 @@ export default function Home() {
         replyTo: replyTo,
         edited: true,
         avatar: selectedAvatarId,
+        customAvatarUrl: customAvatarUrl,
         image: existingImage // keep the original image when editing text
       });
 
@@ -527,6 +745,7 @@ export default function Home() {
       // Message Sending Mode (normal or reply)
       const isReply = !!replyingToMessage;
       let finalContent = '';
+      const resolvedCustomAvatar = customAvatarUrl || user?.custom_avatar_url || (typeof window !== 'undefined' ? localStorage.getItem('rg_custom_avatar_url') : null);
 
       if (isReply) {
         let replyText = replyingToMessage.content;
@@ -543,12 +762,14 @@ export default function Home() {
             content: replyText
           },
           avatar: selectedAvatarId,
+          customAvatarUrl: resolvedCustomAvatar,
           image: selectedImage
         });
       } else {
         finalContent = JSON.stringify({
           text: inputText.trim(),
           avatar: selectedAvatarId,
+          customAvatarUrl: resolvedCustomAvatar,
           image: selectedImage
         });
       }
@@ -607,15 +828,6 @@ export default function Home() {
     }
   };
 
-  const handleSelectRoom = (roomId) => {
-    setActiveRoom(roomId);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('rg_active_room', roomId);
-      const savedDraft = localStorage.getItem(`rg_chat_draft_${roomId}`) || '';
-      setInputText(savedDraft);
-    }
-  };
-
   const handleSaveUsername = () => {
     if (tempUsername.trim()) {
       setUsername(tempUsername.trim());
@@ -649,8 +861,40 @@ export default function Home() {
 
   const handleSelectAvatar = (avatarId) => {
     setSelectedAvatarId(avatarId);
-    localStorage.setItem('rg_avatar_id', avatarId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_avatar_id', avatarId);
+    }
     setIsAvatarPickerOpen(false);
+  };
+
+  const handleProfileImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const resized = await resizeImage(file, 250, 250, 0.85);
+      setCustomAvatarUrl(resized);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rg_custom_avatar_url', resized);
+        localStorage.setItem('rg_avatar_id', 'custom');
+      }
+      setSelectedAvatarId('custom');
+    } catch (err) {
+      console.error('Profile image upload error:', err);
+    } finally {
+      if (profileFileInputRef.current) {
+        profileFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveCustomAvatar = () => {
+    setCustomAvatarUrl(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('rg_custom_avatar_url');
+      localStorage.setItem('rg_avatar_id', 'av-1');
+    }
+    setSelectedAvatarId('av-1');
   };
 
   // Group Creation Handler
@@ -755,6 +999,19 @@ export default function Home() {
     return false;
   });
 
+  const onlineUsersList = Object.values(onlineUsers).filter(
+    (u) => Date.now() - (u.lastSeen || 0) < 40000
+  );
+  if (!onlineUsersList.some((u) => u.username === username) && username) {
+    onlineUsersList.unshift({
+      username,
+      avatarId: selectedAvatarId,
+      room: activeRoom,
+      lastSeen: Date.now()
+    });
+  }
+  const onlineCount = onlineUsersList.length;
+
   return (
       <div className="flex-1 flex flex-col lg:flex-row w-full h-[calc(100vh-3.5rem)] min-h-[500px] overflow-hidden bg-slate-900 border-x border-slate-800/80" id="chat-applet">
         {/* Left Sidebar - Channels & Profiles */}
@@ -769,46 +1026,103 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setIsAvatarPickerOpen(!isAvatarPickerOpen)}
-                  className={`relative flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-tr ${
-                    (PRESET_AVATARS.find((a) => a.id === selectedAvatarId) || PRESET_AVATARS[0]).bg
-                  } text-xl shadow-md cursor-pointer select-none active:scale-95 transition-transform duration-150 border border-slate-700/50 group`}
-                  title="অ্যাভাটার পরিবর্তন করুন"
+                  className={`relative flex items-center justify-center w-11 h-11 rounded-full ${
+                    customAvatarUrl ? 'bg-slate-800' : 'bg-gradient-to-tr ' + ((PRESET_AVATARS.find((a) => a.id === selectedAvatarId) || PRESET_AVATARS[0]).bg)
+                  } text-xl shadow-md cursor-pointer select-none active:scale-95 transition-transform duration-150 border border-slate-700/50 group overflow-hidden`}
+                  title="প্রোফাইল ছবি বা অ্যাভাটার পরিবর্তন করুন"
                 >
-                  {(PRESET_AVATARS.find((a) => a.id === selectedAvatarId) || PRESET_AVATARS[0]).emoji}
-                  <div className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-800 rounded-full p-0.5 text-[8px] text-slate-400 group-hover:text-white group-hover:border-slate-600 transition">
+                  {customAvatarUrl ? (
+                    <img src={customAvatarUrl} alt={username} className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    (PRESET_AVATARS.find((a) => a.id === selectedAvatarId) || PRESET_AVATARS[0]).emoji
+                  )}
+                  <div className="absolute -bottom-1 -right-1 bg-slate-900 border border-slate-800 rounded-full p-0.5 text-[8px] text-slate-400 group-hover:text-white group-hover:border-slate-600 transition z-10">
                     <ChevronDown className="w-2.5 h-2.5" />
                   </div>
                 </button>
 
                 {/* Avatar Picker Dropdown Panel */}
                 {isAvatarPickerOpen && (
-                  <div className="absolute left-0 mt-2 p-3 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 w-52 animate-in fade-in slide-in-from-top-1 duration-150">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">অ্যাভাটার সিলেক্ট করুন</span>
+                  <div className="absolute left-0 mt-2 p-3.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 w-64 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center justify-between mb-2.5 pb-1.5 border-b border-slate-800">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-blue-400" />
+                        প্রোফাইল ছবি ও অ্যাভাটার
+                      </span>
                       <button
                         type="button"
                         onClick={() => setIsAvatarPickerOpen(false)}
-                        className="text-slate-500 hover:text-white p-0.5 rounded"
+                        className="text-slate-500 hover:text-white p-0.5 rounded-lg hover:bg-slate-800 transition"
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    {/* Custom Image Upload Option */}
+                    <div className="mb-3 bg-slate-950 p-2.5 rounded-xl border border-slate-800/80">
+                      <input
+                        type="file"
+                        ref={profileFileInputRef}
+                        accept="image/*"
+                        onChange={handleProfileImageUpload}
+                        className="hidden"
+                      />
+                      {customAvatarUrl ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <img src={customAvatarUrl} alt="Custom Profile" className="w-9 h-9 rounded-full object-cover border border-blue-500/50 shadow flex-shrink-0" />
+                            <div className="truncate">
+                              <p className="text-xs font-bold text-white truncate">কাস্টম ছবি যুক্ত</p>
+                              <p className="text-[10px] text-emerald-400 font-medium">সক্রিয় রয়েছে</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRemoveCustomAvatar}
+                            className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-bold transition flex items-center gap-1 flex-shrink-0"
+                            title="ছবি মুছুন"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            মুছুন
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => profileFileInputRef.current?.click()}
+                          className="w-full py-2 px-3 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 group cursor-pointer"
+                        >
+                          <Upload className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
+                          <span>গ্যালারি থেকে ছবি আপলোড</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">অথবা ইমোজি সিলেক্ট করুন</p>
                     <div className="grid grid-cols-4 gap-1.5">
                       {PRESET_AVATARS.map((av) => {
-                        const isSel = av.id === selectedAvatarId;
+                        const isSel = !customAvatarUrl && av.id === selectedAvatarId;
                         return (
                           <button
                             key={av.id}
                             type="button"
-                            onClick={() => handleSelectAvatar(av.id)}
-                            className={`flex items-center justify-center h-10 w-10 rounded-lg bg-gradient-to-tr ${av.bg} text-lg transition duration-150 hover:scale-105 active:scale-90 relative ${
-                              isSel ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:opacity-95'
+                            onClick={() => {
+                              if (customAvatarUrl) {
+                                setCustomAvatarUrl(null);
+                                if (typeof window !== 'undefined') {
+                                  localStorage.removeItem('rg_custom_avatar_url');
+                                }
+                              }
+                              handleSelectAvatar(av.id);
+                            }}
+                            className={`flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-tr ${av.bg} text-lg transition duration-150 hover:scale-105 active:scale-90 relative ${
+                              isSel ? 'ring-2 ring-blue-500 shadow-lg scale-105' : 'hover:opacity-95'
                             }`}
                             title={av.label}
                           >
                             {av.emoji}
                             {isSel && (
-                              <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full p-0.5">
+                              <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full p-0.5 shadow">
                                 <Check className="w-2.5 h-2.5" />
                               </div>
                             )}
@@ -869,19 +1183,39 @@ export default function Home() {
             <div className="space-y-1">
               {CHANNELS.map((channel) => {
                 const isActive = activeRoom === channel.id;
+                const isForbidden = (channel.minRole === 'admin' && !isAdmin) || (channel.minRole === 'moderator' && !isModerator);
                 return (
                   <button
                     key={channel.id}
                     onClick={() => handleSelectRoom(channel.id)}
-                    className={`w-full text-left flex items-start gap-3 p-2.5 rounded-xl transition duration-150 ${
+                    className={`w-full text-left flex items-start gap-3 p-2.5 rounded-xl transition duration-150 relative group ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/10'
+                        : isForbidden
+                        ? 'text-slate-500 bg-slate-950/50 hover:bg-slate-900/80 border border-slate-800/60'
                         : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
                     }`}
                   >
-                    <Hash className={`w-5 h-5 mt-0.5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-                    <div className="truncate">
-                      <p className="text-sm font-semibold truncate">{channel.name}</p>
+                    <div className="relative mt-0.5">
+                      <Hash className={`w-5 h-5 ${isActive ? 'text-white' : isForbidden ? 'text-slate-600' : 'text-slate-500'}`} />
+                      {isForbidden && (
+                        <Shield className="w-3 h-3 text-amber-500 absolute -bottom-1 -right-1 bg-slate-950 rounded-full p-0.5" />
+                      )}
+                    </div>
+                    <div className="truncate flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-sm font-semibold truncate">{channel.name}</p>
+                        {channel.minRole === 'admin' && (
+                          <span className="text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded-full shrink-0">
+                            অ্যাডমিন
+                          </span>
+                        )}
+                        {channel.minRole === 'moderator' && (
+                          <span className="text-[9px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 rounded-full shrink-0">
+                            মডারেটর+
+                          </span>
+                        )}
+                      </div>
                       <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
                         {channel.desc}
                       </p>
@@ -962,6 +1296,65 @@ export default function Home() {
             )}
           </div>
 
+          {/* Online Active Members Sidebar Section */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <div className="flex items-center justify-between px-2 mb-2">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>অনলাইনে আছেন ({onlineCount})</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsOnlineListOpen(true)}
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline"
+              >
+                তালিকা দেখুন
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              {onlineUsersList.map((usr) => {
+                const uAvUrl = usr.customAvatarUrl || (usr.username === username ? customAvatarUrl : null);
+                const uAv = PRESET_AVATARS.find(a => a.id === usr.avatarId) || getAvatarForUsername(usr.username);
+                const isCurrent = usr.username === username;
+                const roomObj = CHANNELS.find(r => r.id === usr.room) || (customGroups || []).find(g => g.id === usr.room);
+                return (
+                  <div
+                    key={usr.username}
+                    className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs hover:bg-slate-800/60 transition"
+                  >
+                    <div className="flex items-center gap-2 truncate min-w-0">
+                      <div className="relative flex-shrink-0">
+                        {uAvUrl ? (
+                          <img src={uAvUrl} alt={usr.username} className="w-6 h-6 rounded-full object-cover shadow-sm border border-slate-700/50" />
+                        ) : (
+                          <div className={`w-6 h-6 rounded-full bg-gradient-to-tr ${uAv.bg} text-xs flex items-center justify-center select-none shadow-sm`}>
+                            {uAv.emoji}
+                          </div>
+                        )}
+                        <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
+                      </div>
+                      <div className="truncate min-w-0">
+                        <p className="font-semibold text-slate-200 truncate leading-snug">
+                          {usr.username} {isCurrent && <span className="text-[10px] text-emerald-400 font-normal">(আপনি)</span>}
+                        </p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {roomObj ? roomObj.name : 'সাধারণ চ্যাট'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.2 rounded-full font-medium">
+                      সক্রিয়
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Guidelines / Help box */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 space-y-2">
             <h5 className="font-bold text-slate-300 flex items-center gap-1.5">
@@ -969,7 +1362,7 @@ export default function Home() {
               গুরুত্বপূর্ণ টিপস
             </h5>
             <p className="leading-relaxed">
-              আপনি একই সাথে অন্য একটি ব্রাউজার ট্যাব বা উইন্ডো খুলে এই চ্যাট পেইজটিতে প্রবেশ করুন। সেখানে অন্য নাম দিয়ে বার্তা লিখে পাঠান—দেখবেন রিয়েল-টাইমে মেসেজ আদান-প্রদান হচ্ছে!
+              আপনি একই সাথে অন্য একটি ব্রাউজার ট্যাব বা উইন্ডো খুলে এই চ্যাট পেইজটিতে প্রবেশ করুন। সেখানে অন্য নাম দিয়ে বার্তা লিখে পাঠান—দেখবেন রিয়েল-টাইমে মেসেজ আদান-প্রদান ও অনলাইন স্ট্যাটাস আপডেট হচ্ছে!
             </p>
           </div>
         </div>
@@ -1009,10 +1402,21 @@ export default function Home() {
               <Database className="w-3.5 h-3.5 text-emerald-400" />
               <span className="hidden sm:inline">SQL সেটিংস</span>
             </button>
-            <div className="flex items-center gap-1 text-slate-400 text-xs">
-              <Users className="w-4 h-4 text-slate-500" />
-              <span className="font-mono">কমিউনিটি লাইভ</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsOnlineListOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer group/onl"
+              title="অনলাইন সদস্যদের তালিকা দেখুন"
+            >
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="font-mono text-emerald-300 group-hover/onl:text-emerald-200">
+                {onlineCount} জন অনলাইনে
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-emerald-400 transition-transform group-hover/onl:translate-y-0.5" />
+            </button>
           </div>
         </div>
 
@@ -1121,6 +1525,7 @@ export default function Home() {
               let contentText = msg.content;
               let messageAvatarId = null;
               let messageImage = null;
+              let messageCustomAvatarUrl = null;
               
               if (msg.content && msg.content.startsWith('{"text":')) {
                 try {
@@ -1132,12 +1537,20 @@ export default function Home() {
                   isPinned = !!parsed.pinned;
                   messageAvatarId = parsed.avatar;
                   messageImage = parsed.image;
+                  messageCustomAvatarUrl = parsed.customAvatarUrl;
                 } catch (e) {
                   // Fallback
                 }
               }
 
-              // Retrieve the correct avatar object
+              // Retrieve the correct avatar object or custom URL
+              const senderCustomAvatar = 
+                messageCustomAvatarUrl || 
+                (msg.sender === username ? customAvatarUrl : null) || 
+                onlineUsers[msg.sender]?.customAvatarUrl || 
+                profilesMap[msg.sender] || 
+                (msg.sender === username && typeof window !== 'undefined' ? localStorage.getItem('rg_custom_avatar_url') : null) ||
+                (user?.name === msg.sender ? user.custom_avatar_url : null);
               const avatarObj = messageAvatarId 
                 ? (PRESET_AVATARS.find(a => a.id === messageAvatarId) || getAvatarForUsername(msg.sender))
                 : getAvatarForUsername(msg.sender);
@@ -1151,17 +1564,42 @@ export default function Home() {
                   }`}
                 >
                   {/* Sender Avatar Column */}
-                  <div 
-                    className={`flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-tr ${avatarObj.bg} text-sm flex items-center justify-center shadow select-none`}
-                    title={`${msg.sender} (${avatarObj.label})`}
-                  >
-                    {avatarObj.emoji}
+                  <div className="relative flex-shrink-0">
+                    {senderCustomAvatar ? (
+                      <img
+                        src={senderCustomAvatar}
+                        alt={msg.sender}
+                        className="w-8 h-8 rounded-full object-cover shadow border border-slate-700/50 select-none"
+                        title={msg.sender}
+                      />
+                    ) : (
+                      <div 
+                        className={`w-8 h-8 rounded-full bg-gradient-to-tr ${avatarObj.bg} text-sm flex items-center justify-center shadow select-none`}
+                        title={`${msg.sender} (${avatarObj.label})`}
+                      >
+                        {avatarObj.emoji}
+                      </div>
+                    )}
+                    {onlineUsers[msg.sender] && (
+                      <span 
+                        className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-900 shadow-sm"
+                        title="অনলাইনে আছেন"
+                      />
+                    )}
                   </div>
 
                   {/* Message Bubble + Meta Column */}
                   <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
                     <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-500">
-                      <span className="font-semibold text-slate-400">{msg.sender}</span>
+                      <span className="font-semibold text-slate-400 flex items-center gap-1">
+                        {msg.sender}
+                        {onlineUsers[msg.sender] && (
+                          <span className="inline-flex items-center gap-1 text-[9px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded-full font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            অনলাইন
+                          </span>
+                        )}
+                      </span>
                       <span>•</span>
                       <span className="font-mono">
                         {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'এখনই'}
@@ -1668,6 +2106,136 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Access Restriction Warning Modal */}
+      {roomAccessError && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+              <Shield className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">{roomAccessError.title}</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                {roomAccessError.message}
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setRoomAccessError(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition"
+              >
+                বন্ধ করুন
+              </button>
+              <Link
+                href="/profile"
+                className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-blue-600/20"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>প্রোফাইল ব্যাকআপ দেখুন</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Online Active Members List Modal */}
+      {isOnlineListOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>অনলাইন ব্যবহারকারীগণ</span>
+                    <span className="bg-emerald-500/20 text-emerald-300 text-xs px-2.5 py-0.5 rounded-full font-mono font-bold border border-emerald-500/30">
+                      {onlineCount} জন
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">বর্তমানে রিয়েল-টাইমে চ্যাটে সক্রিয় আছেন</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOnlineListOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* User Cards List */}
+            <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
+              {onlineUsersList.map((usr) => {
+                const uAvUrl = usr.customAvatarUrl || (usr.username === username ? customAvatarUrl : null);
+                const uAv = PRESET_AVATARS.find(a => a.id === usr.avatarId) || getAvatarForUsername(usr.username);
+                const isCurrent = usr.username === username;
+                const roomObj = CHANNELS.find(r => r.id === usr.room) || (customGroups || []).find(g => g.id === usr.room);
+
+                return (
+                  <div
+                    key={usr.username}
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/30 transition group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative flex-shrink-0">
+                        {uAvUrl ? (
+                          <img src={uAvUrl} alt={usr.username} className="w-10 h-10 rounded-full object-cover shadow border border-slate-700/50" />
+                        ) : (
+                          <div className={`w-10 h-10 rounded-full bg-gradient-to-tr ${uAv.bg} text-lg flex items-center justify-center shadow select-none`}>
+                            {uAv.emoji}
+                          </div>
+                        )}
+                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
+                      </div>
+                      <div className="truncate min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-sm font-bold text-white truncate">{usr.username}</h4>
+                          {isCurrent && (
+                            <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.2 rounded-full font-semibold border border-blue-500/30">
+                              আপনি
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400 truncate mt-0.5">
+                          চ্যানেল: <span className="text-slate-300 font-medium">{roomObj ? roomObj.name : 'সাধারণ চ্যাট'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        অনলাইন
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-400">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                লাইভ প্রেজেন্স চালু আছে
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsOnlineListOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition"
+              >
+                বন্ধ করুন
+              </button>
+            </div>
           </div>
         </div>
       )}

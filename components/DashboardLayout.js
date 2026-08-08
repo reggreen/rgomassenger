@@ -24,7 +24,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, appLogo } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [counts, setCounts] = useState({
@@ -109,6 +109,12 @@ export default function DashboardLayout({ children }) {
       ]
     },
     {
+      title: '🔐 এডমিনিস্ট্রেশন & গার্ড',
+      items: [
+        { name: 'অ্যাডমিন প্যানেল', href: '/admin', icon: Shield, badge: 'গার্ড', badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+      ]
+    },
+    {
       title: '👤 অ্যাকাউন্ট',
       items: [
         { name: 'মাই প্রোফাইল', href: '/profile', icon: User, badge: null },
@@ -161,9 +167,17 @@ export default function DashboardLayout({ children }) {
         {/* Top Header/Brand */}
         <div className="p-4 border-b border-slate-800/80 flex items-center justify-between gap-2">
           <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white p-2.5 rounded-xl shadow-lg shadow-blue-600/20 flex-shrink-0">
-              <LayoutDashboard className="w-5 h-5" />
-            </div>
+            {appLogo ? (
+              <img
+                src={appLogo}
+                alt="App Logo"
+                className="w-9 h-9 object-contain rounded-xl bg-slate-950 p-0.5 border border-slate-800 shadow-lg shadow-indigo-500/10 flex-shrink-0"
+              />
+            ) : (
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white p-2.5 rounded-xl shadow-lg shadow-blue-600/20 flex-shrink-0">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+            )}
             {(!isCollapsed || isMobileOpen) && (
               <div className="min-w-0">
                 <span className="font-extrabold text-base tracking-tight text-white block truncate">
@@ -253,10 +267,28 @@ export default function DashboardLayout({ children }) {
               {user?.loggedIn && (
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xl p-1 bg-slate-800 rounded-lg">{user.avatar_emoji || '🧑‍💻'}</span>
+                    {(user.custom_avatar_url || (typeof window !== 'undefined' && localStorage.getItem('rg_custom_avatar_url'))) ? (
+                      <img
+                        src={user.custom_avatar_url || localStorage.getItem('rg_custom_avatar_url')}
+                        alt={user.name}
+                        className="w-8 h-8 rounded-xl object-cover border border-blue-500/50 shadow flex-shrink-0"
+                      />
+                    ) : (
+                      <span className="text-xl p-1 bg-slate-800 rounded-lg">{user.avatar_emoji || '🧑‍💻'}</span>
+                    )}
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-white truncate">{user.name}</p>
-                      <p className="text-[10px] text-blue-400 font-mono truncate">{user.role || 'মেম্বার'}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-white truncate">{user.name}</p>
+                      </div>
+                      <p className="text-[10px] font-mono truncate flex items-center gap-1">
+                        {user.email === 'redgreenonline2023@gmail.com' || (user.role || '').includes('অ্যাডমিন') ? (
+                          <span className="text-amber-400 font-bold bg-amber-500/10 px-1 rounded border border-amber-500/20">👑 অ্যাডমিন</span>
+                        ) : (user.role || '').includes('মডারেটর') ? (
+                          <span className="text-indigo-300 font-bold bg-indigo-500/10 px-1 rounded border border-indigo-500/20">🛡️ মডারেটর</span>
+                        ) : (
+                          <span className="text-emerald-400 font-medium bg-emerald-500/10 px-1 rounded border border-emerald-500/20">🚀 মেম্বার</span>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <button

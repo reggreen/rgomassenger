@@ -67,12 +67,11 @@ export default function LoginPage() {
     setSubmitting(false);
   };
 
-  const handleDemoClick = (type) => {
-    const res = demoLogin(type);
-    setMessage({ type: 'success', text: res.message });
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 1000);
+  const fillCredentials = () => {
+    setActiveTab('login');
+    setEmail('redgreenonline2023@gmail.com');
+    setPassword('12345678');
+    setMessage({ type: 'success', text: 'সিস্টেম অ্যাডমিন ইমেইল ও পাসওয়ার্ড ফিল করা হয়েছে। "লগইন করুন" প্রেস করুন।' });
   };
 
   return (
@@ -256,41 +255,18 @@ export default function LoginPage() {
                 )}
               </button>
 
-              {/* Quick Demo */}
+              {/* Quick Admin Filler */}
               <div className="pt-3 border-t border-slate-800">
-                <p className="text-[11px] font-bold text-slate-400 text-center mb-2 flex items-center justify-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>১-ক্লিকে ডেমো প্রোফাইলে প্রবেশ করুন</span>
-                </p>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleDemoClick('admin')}
-                    className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-xl text-center group transition"
-                  >
-                    <span className="block text-base">🧑‍💻</span>
-                    <span className="block text-[10px] font-bold text-blue-400 group-hover:text-white">অ্যাডমিন</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDemoClick('moderator')}
-                    className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-xl text-center group transition"
-                  >
-                    <span className="block text-base">🦁</span>
-                    <span className="block text-[10px] font-bold text-indigo-400 group-hover:text-white">মডারেটর</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDemoClick('member')}
-                    className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-xl text-center group transition"
-                  >
-                    <span className="block text-base">🚀</span>
-                    <span className="block text-[10px] font-bold text-emerald-400 group-hover:text-white">সদস্য</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={fillCredentials}
+                  className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800/80 p-2.5 rounded-xl text-center transition flex items-center justify-center gap-2 group"
+                >
+                  <Zap className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-slate-300 group-hover:text-white">
+                    সিস্টেম অ্যাডমিন ক্রেডেনশিয়াল ফিল করুন (redgreenonline2023@gmail.com)
+                  </span>
+                </button>
               </div>
             </form>
           </div>

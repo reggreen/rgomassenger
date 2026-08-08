@@ -20,7 +20,7 @@ import {
 
 export default function Navbar() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, appLogo } = useAuth();
   const [isLoginOpen, setIsLoginOpen] = useState(false);
 
   return (
@@ -30,9 +30,17 @@ export default function Navbar() {
           
           {/* Brand/Logo pointing to Dashboard */}
           <Link href="/dashboard" className="flex items-center gap-2 group shrink-0">
-            <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 text-white p-2 rounded-xl shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
-              <LayoutDashboard className="w-5 h-5" />
-            </div>
+            {appLogo ? (
+              <img
+                src={appLogo}
+                alt="App Logo"
+                className="w-9 h-9 object-contain rounded-xl bg-slate-950 p-0.5 border border-slate-800 shadow-lg shadow-indigo-500/10 group-hover:scale-105 transition-transform duration-200"
+              />
+            ) : (
+              <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 text-white p-2 rounded-xl shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+            )}
             <div className="flex flex-col">
               <span className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-400 bg-clip-text text-transparent">
                 rgomassenger
@@ -71,7 +79,15 @@ export default function Navbar() {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-xs font-semibold text-slate-200 border border-slate-700/80 transition"
                   title="প্রোফাইল দেখুন"
                 >
-                  <span className="text-sm">{user.avatar_emoji || '🧑‍💻'}</span>
+                  {(user.custom_avatar_url || (typeof window !== 'undefined' && localStorage.getItem('rg_custom_avatar_url'))) ? (
+                    <img
+                      src={user.custom_avatar_url || localStorage.getItem('rg_custom_avatar_url')}
+                      alt={user.name}
+                      className="w-5 h-5 rounded-full object-cover border border-blue-500/50"
+                    />
+                  ) : (
+                    <span className="text-sm">{user.avatar_emoji || '🧑‍💻'}</span>
+                  )}
                   <span className="max-w-[85px] truncate hidden md:inline">{user.name}</span>
                 </Link>
                 <button

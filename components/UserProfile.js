@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -22,8 +22,44 @@ import {
   X,
   Camera,
   LogOut,
-  LogIn
+  LogIn,
+  Upload,
+  Trash2
 } from 'lucide-react';
+
+const resizeImage = (file, maxWidth = 300, maxHeight = 300, quality = 0.85) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 const PRESET_AVATARS = [
   { emoji: '🧑‍💻', bg: 'from-blue-600 to-indigo-600', label: 'কোডার' },
@@ -45,6 +81,8 @@ export default function UserProfile({ onProfileUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [toast, setToast] = useState('');
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Stats for current user
   const [userStats, setUserStats] = useState({
@@ -101,6 +139,10 @@ export default function UserProfile({ onProfileUpdate }) {
 
       // 3. Fallback to localStorage or default profile state
       const localNickname = typeof window !== 'undefined' ? localStorage.getItem('rg_username') : null;
+      const savedCustomAvatar = fetchedProfile?.custom_avatar_url || fetchedProfile?.avatar_url || authContextUser?.custom_avatar_url || (typeof window !== 'undefined' ? localStorage.getItem('rg_custom_avatar_url') : null);
+      if (savedCustomAvatar) {
+        setCustomAvatarUrl(savedCustomAvatar);
+      }
 
       const mergedProfile = {
         id: fetchedProfile?.id || userId,
@@ -111,6 +153,7 @@ export default function UserProfile({ onProfileUpdate }) {
         role: authContextUser?.role || fetchedProfile?.role || currentUserRole,
         bio: authContextUser?.bio || fetchedProfile?.bio || 'rgomassenger কমিউনিটির সক্রিয় সদস্য এবং সিস্টেম মডারেটর।',
         avatar_emoji: authContextUser?.avatar_emoji || fetchedProfile?.avatar_emoji || '🧑‍💻',
+        custom_avatar_url: savedCustomAvatar,
         created_at: fetchedProfile?.created_at || currentAuthUser?.created_at || '2026-01-15T10:00:00.000Z',
         last_sign_in_at: currentAuthUser?.last_sign_in_at || new Date().toISOString(),
         is_verified: true
@@ -153,6 +196,35 @@ export default function UserProfile({ onProfileUpdate }) {
     fetchUserProfile();
   }, []);
 
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const resized = await resizeImage(file, 300, 300, 0.85);
+      setCustomAvatarUrl(resized);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rg_custom_avatar_url', resized);
+        localStorage.setItem('rg_avatar_id', 'custom');
+      }
+      setToast('প্রোফাইল ছবি সফলভাবে যুক্ত হয়েছে!');
+      setTimeout(() => setToast(''), 3000);
+    } catch (err) {
+      console.error('Profile image upload error:', err);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setCustomAvatarUrl(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('rg_custom_avatar_url');
+      localStorage.setItem('rg_avatar_id', 'av-1');
+    }
+    setToast('প্রোফাইল ছবি রিমুভ করা হয়েছে');
+    setTimeout(() => setToast(''), 3000);
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setUpdating(true);
@@ -168,6 +240,7 @@ export default function UserProfile({ onProfileUpdate }) {
             bio: formData.bio,
             role: formData.role,
             avatar_emoji: formData.avatar_emoji,
+            custom_avatar_url: customAvatarUrl,
             updated_at: new Date().toISOString()
           }
         ]);
@@ -183,11 +256,18 @@ export default function UserProfile({ onProfileUpdate }) {
           phone: formData.phone,
           bio: formData.bio,
           role: formData.role,
-          avatar_emoji: formData.avatar_emoji
+          avatar_emoji: formData.avatar_emoji,
+          custom_avatar_url: customAvatarUrl
         });
       }
       if (typeof window !== 'undefined') {
         localStorage.setItem('rg_username', formData.full_name);
+        if (customAvatarUrl) {
+          localStorage.setItem('rg_custom_avatar_url', customAvatarUrl);
+          localStorage.setItem('rg_avatar_id', 'custom');
+        } else {
+          localStorage.removeItem('rg_custom_avatar_url');
+        }
       }
 
       // Update state
@@ -198,7 +278,8 @@ export default function UserProfile({ onProfileUpdate }) {
         phone: formData.phone,
         bio: formData.bio,
         role: formData.role,
-        avatar_emoji: formData.avatar_emoji
+        avatar_emoji: formData.avatar_emoji,
+        custom_avatar_url: customAvatarUrl
       };
 
       setProfile(updated);
@@ -253,12 +334,28 @@ export default function UserProfile({ onProfileUpdate }) {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div className="flex items-center gap-4">
           {/* User Avatar */}
-          <div className="relative">
-            <div className="w-16 h-16 md:w-20 md:y-20 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-3xl md:text-4xl shadow-xl shadow-blue-600/20 border-2 border-slate-700">
-              {profile?.avatar_emoji || '🧑‍💻'}
+          <div 
+            className="relative group cursor-pointer" 
+            onClick={() => fileInputRef.current?.click()} 
+            title="প্রোফাইল ছবি পরিবর্তন করতে ক্লিক করুন"
+          >
+            {customAvatarUrl ? (
+              <img
+                src={customAvatarUrl}
+                alt={profile?.full_name}
+                className="w-16 h-16 md:w-20 md:h-20 rounded-2xl object-cover shadow-xl border-2 border-blue-500/80"
+              />
+            ) : (
+              <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-3xl md:text-4xl shadow-xl shadow-blue-600/20 border-2 border-slate-700">
+                {profile?.avatar_emoji || '🧑‍💻'}
+              </div>
+            )}
+            <div className="absolute inset-0 bg-slate-950/75 rounded-2xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition text-white text-[10px] md:text-xs font-bold gap-1 backdrop-blur-[2px]">
+              <Camera className="w-4 h-4 text-blue-400" />
+              <span>আপলোড</span>
             </div>
             {profile?.is_verified && (
-              <span className="absolute -bottom-1 -right-1 bg-emerald-500 text-slate-950 p-1 rounded-full border-2 border-slate-900 shadow-md" title="সুপাবেস ভেরিফাইড প্রোফাইল">
+              <span className="absolute -bottom-1 -right-1 bg-emerald-500 text-slate-950 p-1 rounded-full border-2 border-slate-900 shadow-md z-10" title="সুপাবেস ভেরিফাইড প্রোফাইল">
                 <ShieldCheck className="w-3.5 h-3.5 font-bold" />
               </span>
             )}
@@ -300,10 +397,67 @@ export default function UserProfile({ onProfileUpdate }) {
       {/* Edit Form Modal/Drawer View */}
       {isEditing ? (
         <form onSubmit={handleSaveProfile} className="mt-6 space-y-4 bg-slate-950/60 p-5 rounded-2xl border border-slate-800">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-2">
-            <Edit3 className="w-4 h-4 text-blue-400" />
-            <span>সুপাবেস প্রোফাইল তথ্য পরিবর্তন করুন</span>
+          <h3 className="text-sm font-bold text-white flex items-center justify-between border-b border-slate-800 pb-3">
+            <span className="flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-blue-400" />
+              <span>সুপাবেস প্রোফাইল তথ্য পরিবর্তন করুন</span>
+            </span>
           </h3>
+
+          {/* Profile Photo Upload Box */}
+          <div className="bg-slate-900/90 p-4 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-blue-400" />
+                <span>প্রোফাইল ছবি আপলোড (Profile Picture Upload)</span>
+              </label>
+              {customAvatarUrl && (
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  কাস্টম ছবি সক্রিয়
+                </span>
+              )}
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+
+            <div className="flex items-center gap-4">
+              <div className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-slate-700 bg-slate-950 flex items-center justify-center flex-shrink-0 shadow-inner">
+                {customAvatarUrl ? (
+                  <img src={customAvatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-2xl">{formData.avatar_emoji || '🧑‍💻'}</span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                >
+                  <Upload className="w-4 h-4 text-blue-400" />
+                  <span>গ্যালারি থেকে ছবি বেছে নিন</span>
+                </button>
+
+                {customAvatarUrl && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    className="px-3.5 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>ছবি মুছুন</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -350,15 +504,17 @@ export default function UserProfile({ onProfileUpdate }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1">অবতার ইমোজি (Avatar Icon)</label>
+            <label className="block text-xs font-semibold text-slate-400 mb-1">অথবা অবতার ইমোজি (Avatar Icon)</label>
             <div className="flex flex-wrap gap-2 pt-1">
               {PRESET_AVATARS.map((av, index) => (
                 <button
                   key={index}
                   type="button"
-                  onClick={() => setFormData({ ...formData, avatar_emoji: av.emoji })}
+                  onClick={() => {
+                    setFormData({ ...formData, avatar_emoji: av.emoji });
+                  }}
                   className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center transition border ${
-                    formData.avatar_emoji === av.emoji
+                    formData.avatar_emoji === av.emoji && !customAvatarUrl
                       ? 'bg-blue-600/30 border-blue-500 scale-110 shadow-lg'
                       : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                   }`}

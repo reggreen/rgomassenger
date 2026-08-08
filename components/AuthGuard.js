@@ -90,10 +90,21 @@ export default function AuthGuard({ children }) {
     setSubmitting(false);
   };
 
-  const handleDemoClick = (type) => {
-    const res = demoLogin(type);
-    setMessage({ type: 'success', text: res.message });
-    router.push('/dashboard');
+  const fillCredentials = (type) => {
+    setActiveTab('login');
+    if (type === 'admin') {
+      setEmail('redgreenonline2023@gmail.com');
+      setPassword('12345678');
+      setMessage({ type: 'success', text: 'অ্যাডমিন ইমেইল ও পাসওয়ার্ড ফিল করা হয়েছে। প্রবেশ করতে "অ্যাকাউন্টে প্রবেশ করুন" বাটনে ক্লিক করুন।' });
+    } else if (type === 'moderator') {
+      setEmail('saiful.mod@rgomassenger.com');
+      setPassword('12345678');
+      setMessage({ type: 'success', text: 'মডারেটর ইমেইল ও পাসওয়ার্ড ফিল করা হয়েছে। প্রবেশ করতে "অ্যাকাউন্টে প্রবেশ করুন" বাটনে ক্লিক করুন।' });
+    } else {
+      setEmail('asif.member@rgomassenger.com');
+      setPassword('12345678');
+      setMessage({ type: 'success', text: 'সদস্য ইমেইল ও পাসওয়ার্ড ফিল করা হয়েছে। প্রবেশ করতে "অ্যাকাউন্টে প্রবেশ করুন" বাটনে ক্লিক করুন।' });
+    }
   };
 
   // Render Forced Auth Lock Screen
@@ -247,18 +258,19 @@ export default function AuthGuard({ children }) {
             )}
           </button>
 
-          {/* Fast 1-Click Demo Section */}
+          {/* Quick Demo Credential Filler */}
           <div className="pt-3 border-t border-slate-800">
             <p className="text-[11px] font-bold text-slate-400 text-center mb-2 flex items-center justify-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>১-ক্লিকে ডেমো অ্যাকাউন্টে আনলক করুন</span>
+              <span>টেস্ট অ্যাকাউন্টের তথ্য ফিল করুন (লগইন বাটন প্রেস করতে হবে)</span>
             </p>
 
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => handleDemoClick('admin')}
+                onClick={() => fillCredentials('admin')}
                 className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-xl text-center group transition"
+                title="অ্যাডমিন ক্রেডেনশিয়াল ইনপুট বক্সে ফিল করুন"
               >
                 <span className="block text-base">🧑‍💻</span>
                 <span className="block text-[10px] font-bold text-blue-400 group-hover:text-white">অ্যাডমিন</span>
@@ -266,8 +278,9 @@ export default function AuthGuard({ children }) {
 
               <button
                 type="button"
-                onClick={() => handleDemoClick('moderator')}
+                onClick={() => fillCredentials('moderator')}
                 className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-xl text-center group transition"
+                title="মডারেটর ক্রেডেনশিয়াল ইনপুট বক্সে ফিল করুন"
               >
                 <span className="block text-base">🦁</span>
                 <span className="block text-[10px] font-bold text-indigo-400 group-hover:text-white">মডারেটর</span>
@@ -275,8 +288,9 @@ export default function AuthGuard({ children }) {
 
               <button
                 type="button"
-                onClick={() => handleDemoClick('member')}
+                onClick={() => fillCredentials('member')}
                 className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-xl text-center group transition"
+                title="সদস্য ক্রেডেনশিয়াল ইনপুট বক্সে ফিল করুন"
               >
                 <span className="block text-base">🚀</span>
                 <span className="block text-[10px] font-bold text-emerald-400 group-hover:text-white">সদস্য</span>
