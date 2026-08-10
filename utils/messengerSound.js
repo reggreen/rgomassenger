@@ -62,6 +62,38 @@ export function playMessengerSound() {
   }
 }
 
+// Play a continuous 8-10 second ringing alarm tone for scheduled tasks
+export function playTaskAlarmRingtone(durationMs = 8000) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return () => {};
+
+    let isStopped = false;
+    const intervalId = setInterval(() => {
+      if (isStopped) return;
+      playMessengerSound();
+    }, 600);
+
+    // Initial immediate play
+    playMessengerSound();
+
+    const stopFn = () => {
+      isStopped = true;
+      clearInterval(intervalId);
+    };
+
+    // Auto stop after duration
+    setTimeout(() => {
+      stopFn();
+    }, durationMs);
+
+    return stopFn;
+  } catch (err) {
+    console.warn('Alarm ringtone play failed:', err);
+    return () => {};
+  }
+}
+
 // Request permission for push notifications and unlock AudioContext
 export async function requestNotificationPermission() {
   if (typeof window === 'undefined') return false;

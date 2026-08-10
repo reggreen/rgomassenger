@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { playMessengerSound, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX } from 'lucide-react';
+import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle } from 'lucide-react';
 
 const SUPABASE_SQL_SCRIPT = `-- =========================================================
 -- COMPLETE SUPABASE SCHEMA & RLS FIX SCRIPT FOR RGOMASSENGER
@@ -269,7 +269,18 @@ export default function Home() {
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDesc, setNewGroupDesc] = useState('');
   const [newGroupEmoji, setNewGroupEmoji] = useState('💬');
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [isManageMembersModalOpen, setIsManageMembersModalOpen] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
+
+  // Task Alert & Scheduled Alarm States
+  const [taskAlerts, setTaskAlerts] = useState([]);
+  const [isTaskAlertModalOpen, setIsTaskAlertModalOpen] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDateTime, setTaskDateTime] = useState('');
+  const [taskTargetMembers, setTaskTargetMembers] = useState(['ALL']);
+  const [triggeredAlarmModal, setTriggeredAlarmModal] = useState(null);
 
   const [selectedImage, setSelectedImage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
@@ -320,6 +331,14 @@ export default function Home() {
         try {
           loadedCustom = JSON.parse(savedGroups);
           setCustomGroups(loadedCustom);
+        } catch (e) {}
+      }
+
+      // Restore scheduled task alerts
+      const savedTaskAlerts = localStorage.getItem('rg_scheduled_task_alerts');
+      if (savedTaskAlerts) {
+        try {
+          setTaskAlerts(JSON.parse(savedTaskAlerts));
         } catch (e) {}
       }
 
@@ -553,6 +572,120 @@ export default function Home() {
     setRecordedAudioUrl(null);
     setRecordingTime(0);
   };
+
+  // Task Alert Functions & Scheduled Alarm Engine
+  const handleCreateTaskAlert = (e) => {
+    e.preventDefault();
+    if (!taskTitle.trim() || !taskDateTime) {
+      alert('দয়া করে টাস্কের বিবরণ এবং নির্ধারিত তারিখ ও সময় পূরণ করুন।');
+      return;
+    }
+
+    const newAlert = {
+      id: 'task_' + Date.now(),
+      title: taskTitle.trim(),
+      dateTime: taskDateTime,
+      targetMembers: taskTargetMembers.length > 0 ? taskTargetMembers : ['ALL'],
+      room: activeRoom,
+      createdByName: username,
+      isTriggered: false,
+      createdAt: new Date().toISOString()
+    };
+
+    const updated = [newAlert, ...taskAlerts];
+    setTaskAlerts(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_scheduled_task_alerts', JSON.stringify(updated));
+    }
+
+    setTaskTitle('');
+    setTaskDateTime('');
+    setTaskTargetMembers(['ALL']);
+    setIsTaskAlertModalOpen(false);
+
+    alert('⏰ টাস্ক অ্যালার্ট ও অ্যালার্ম সফলভাবে শিডিউল করা হয়েছে!');
+  };
+
+  const handleDeleteTaskAlert = (alertId) => {
+    const updated = taskAlerts.filter((a) => a.id !== alertId);
+    setTaskAlerts(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_scheduled_task_alerts', JSON.stringify(updated));
+    }
+  };
+
+  // Background Interval Checker for Scheduled Task Alerts
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTaskAlerts((prevAlerts) => {
+        let updateNeeded = false;
+        const nextAlerts = prevAlerts.map((alert) => {
+          if (!alert.isTriggered && alert.dateTime) {
+            const alertTime = new Date(alert.dateTime).getTime();
+            if (alertTime <= now) {
+              updateNeeded = true;
+
+              // 1. Send automatic task alert message into room
+              const targetTagStr = alert.targetMembers.includes('ALL')
+                ? '@সকল_সদস্য'
+                : alert.targetMembers.map((m) => `@${m}`).join(', ');
+
+              const alertMessageContent = JSON.stringify({
+                text: `⏰ [টাস্ক অ্যালার্ট ও অ্যালার্ম সংকেত]\n📌 টাস্ক: ${alert.title}\n📅 নির্ধারিত সময়: ${formatExactDateTime(alert.dateTime)}\n👥 লক্ষ্যবস্তু সদস্য: ${targetTagStr}`,
+                isTaskAlert: true,
+                taskTitle: alert.title,
+                taskDateTime: alert.dateTime,
+                targetMembers: alert.targetMembers,
+                createdByName: alert.createdByName
+              });
+
+              supabase.from('messages').insert([{
+                room: alert.room || 'general',
+                sender: '⏰ টাস্ক অ্যালার্ট বোট',
+                content: alertMessageContent
+              }]).then(() => {});
+
+              // 2. Check if current user is targeted
+              const isTargeted = alert.targetMembers.includes('ALL') ||
+                alert.targetMembers.includes(username) ||
+                alert.createdByName === username;
+
+              if (isTargeted) {
+                // Play 10-second Continuous Ringing Alarm Chimes
+                playTaskAlarmRingtone(10000);
+
+                // Push System Notification
+                sendMessengerNotification(`⏰ নির্ধারিত টাস্ক অ্যালার্ট!`, alert.title, alert.createdByName);
+
+                // Open Alarm Popup Modal
+                setTriggeredAlarmModal({
+                  id: alert.id,
+                  title: alert.title,
+                  dateTime: alert.dateTime,
+                  createdByName: alert.createdByName,
+                  targetMembers: alert.targetMembers,
+                  room: alert.room
+                });
+              }
+
+              return { ...alert, isTriggered: true };
+            }
+          }
+          return alert;
+        });
+
+        if (updateNeeded) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('rg_scheduled_task_alerts', JSON.stringify(nextAlerts));
+          }
+        }
+        return nextAlerts;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [username]);
 
   // Fetch messages and subscribe to real-time changes
   useEffect(() => {
@@ -1155,12 +1288,14 @@ export default function Home() {
   const handleCreateGroup = (e) => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
+    const initialMembers = Array.from(new Set([username, ...selectedGroupMembers]));
     const newGroup = {
       id: 'group_' + Date.now(),
       name: newGroupName.trim(),
       desc: newGroupDesc.trim() || 'ম্যাসেঞ্জার কাস্টম গ্রুপ',
       emoji: newGroupEmoji || '💬',
       createdBy: username,
+      members: initialMembers,
       createdAt: new Date().toISOString()
     };
     const updatedGroups = [...customGroups, newGroup];
@@ -1171,8 +1306,28 @@ export default function Home() {
     setNewGroupName('');
     setNewGroupDesc('');
     setNewGroupEmoji('💬');
+    setSelectedGroupMembers([]);
     setIsCreateGroupOpen(false);
     handleSelectRoom(newGroup.id);
+  };
+
+  // Member toggle handler for custom groups
+  const handleToggleMemberInGroup = (groupId, memberName) => {
+    const updated = customGroups.map((grp) => {
+      if (grp.id === groupId) {
+        const currentMembers = grp.members || [grp.createdBy || username];
+        const hasMember = currentMembers.includes(memberName);
+        const nextMembers = hasMember
+          ? currentMembers.filter(m => m !== memberName)
+          : [...currentMembers, memberName];
+        return { ...grp, members: nextMembers };
+      }
+      return grp;
+    });
+    setCustomGroups(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_custom_groups', JSON.stringify(updated));
+    }
   };
 
   // Group Delete Handler
@@ -1845,6 +2000,22 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Add/Manage Group Members Button for Custom Groups */}
+            {currentRoomObj.isCustom && !currentRoomObj.isDM && (
+              <button
+                type="button"
+                onClick={() => setIsManageMembersModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                title="গ্রুপে সদস্য যোগ বা রিমুভ করুন"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden sm:inline">সদস্য এড করুন</span>
+                <span className="text-[10px] bg-blue-500/20 px-1.5 py-0.2 rounded-full font-mono">
+                  {(currentRoomObj.members || [currentRoomObj.createdBy || username]).length} জন
+                </span>
+              </button>
+            )}
+
             {/* Theme Toggle Button */}
             <button
               type="button"
@@ -1858,6 +2029,21 @@ export default function Home() {
             >
               {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
               <span className="hidden sm:inline">{isDarkMode ? 'লাইট মোড' : 'ডার্ক মোড'}</span>
+            </button>
+            {/* Task Alert & Alarm Button */}
+            <button
+              type="button"
+              onClick={() => setIsTaskAlertModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer relative"
+              title="টাস্ক অ্যালার্ট ও নির্ধারিত সময়ে সাউন্ড অ্যালার্ম সেট করুন"
+            >
+              <Bell className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              <span className="hidden sm:inline">টাস্ক অ্যালার্ট</span>
+              {taskAlerts.filter(a => !a.isTriggered).length > 0 && (
+                <span className="bg-rose-500 text-white font-mono text-[9px] px-1.5 py-0.2 rounded-full font-bold">
+                  {taskAlerts.filter(a => !a.isTriggered).length}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -2000,6 +2186,7 @@ export default function Home() {
               let replyInfo = null;
               let isEdited = false;
               let isPinned = false;
+              let isTaskAlert = false;
               let contentText = msg.content;
               let messageAvatarId = null;
               let messageImage = null;
@@ -2015,6 +2202,7 @@ export default function Home() {
                   isReply = !!replyInfo;
                   isEdited = !!parsed.edited;
                   isPinned = !!parsed.pinned;
+                  isTaskAlert = !!parsed.isTaskAlert;
                   messageAvatarId = parsed.avatar;
                   messageImage = parsed.image;
                   messageCustomAvatarUrl = parsed.customAvatarUrl;
@@ -2108,6 +2296,14 @@ export default function Home() {
                           <div className="mb-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded-full w-fit">
                             <Pin className="w-3 h-3 fill-amber-400 text-amber-400" />
                             <span>পিন করা বার্তা</span>
+                          </div>
+                        )}
+
+                        {/* Task Alert Badge inside Bubble */}
+                        {isTaskAlert && (
+                          <div className="mb-2 p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 flex items-center gap-2">
+                            <Bell className="w-4 h-4 text-rose-400 animate-pulse shrink-0" />
+                            <span className="text-xs font-bold">⏰ অ্যালার্ম সংকেতযুক্ত টাস্ক অ্যালার্ট</span>
                           </div>
                         )}
 
@@ -2755,6 +2951,57 @@ export default function Home() {
                 />
               </div>
 
+              {/* Select Members during Group Creation */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>গ্রুপের সদস্য নির্বাচন করুন</span>
+                  <span className="text-[10px] text-blue-400 font-mono">
+                    {selectedGroupMembers.length} জন নির্বাচিত
+                  </span>
+                </label>
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 max-h-40 overflow-y-auto space-y-1">
+                  {registeredUsersList.filter(u => u.name !== username).length === 0 ? (
+                    <p className="text-[11px] text-slate-500 text-center py-2">অন্য কোনো নিবন্ধিত সদস্য পাওয়া যায়নি</p>
+                  ) : (
+                    registeredUsersList.filter(u => u.name !== username).map((usr) => {
+                      const isSelected = selectedGroupMembers.includes(usr.name);
+                      return (
+                        <div
+                          key={usr.name}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedGroupMembers(selectedGroupMembers.filter(m => m !== usr.name));
+                            } else {
+                              setSelectedGroupMembers([...selectedGroupMembers, usr.name]);
+                            }
+                          }}
+                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer border transition text-xs ${
+                            isSelected
+                              ? 'bg-blue-600/20 border-blue-500/50 text-white'
+                              : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="text-base">{usr.avatar_emoji || '🧑‍💻'}</span>
+                            <div className="truncate">
+                              <p className="font-bold truncate">{usr.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{usr.role || 'সদস্য'}</p>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border-blue-500'
+                              : 'bg-slate-800 text-slate-400 border-slate-700'
+                          }`}>
+                            {isSelected ? 'যুক্ত' : '+ সিলেক্ট'}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
               <div className="pt-2 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -2773,6 +3020,134 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Group Members Modal */}
+      {isManageMembersModalOpen && currentRoomObj && currentRoomObj.isCustom && (
+        <div className="fixed inset-0 z-[110] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setIsManageMembersModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-blue-600/20 text-blue-400 rounded-xl border border-blue-500/30 shrink-0">
+                <UserPlus className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>{currentRoomObj.name}</span>
+                  <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-mono border border-blue-500/30">
+                    {(currentRoomObj.members || [currentRoomObj.createdBy || username]).length} জন সদস্য
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">গ্রুপে নতুন সদস্য যোগ করুন বা সদস্য তালিকা নিয়ন্ত্রণ করুন</p>
+              </div>
+            </div>
+
+            {/* Member Search Bar */}
+            <div className="relative mb-3">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+              <input
+                type="text"
+                placeholder="সদস্য সার্চ করুন..."
+                value={memberSearchQuery}
+                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-white text-xs pl-8 pr-8 py-2.5 rounded-xl focus:border-blue-500 focus:outline-none transition"
+              />
+              {memberSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMemberSearchQuery('')}
+                  className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Registered Users List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-1">
+              {registeredUsersList
+                .filter((usr) => {
+                  if (!memberSearchQuery.trim()) return true;
+                  const q = memberSearchQuery.toLowerCase();
+                  return (usr.name || '').toLowerCase().includes(q) || (usr.role || '').toLowerCase().includes(q);
+                })
+                .map((usr) => {
+                  const currentMembers = currentRoomObj.members || [currentRoomObj.createdBy || username];
+                  const isMember = currentMembers.includes(usr.name);
+                  const isCreator = usr.name === currentRoomObj.createdBy;
+
+                  return (
+                    <div
+                      key={usr.name}
+                      className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                        isMember
+                          ? 'bg-blue-950/30 border-blue-800/60'
+                          : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate min-w-0">
+                        <span className="text-lg shrink-0">{usr.avatar_emoji || '🧑‍💻'}</span>
+                        <div className="truncate">
+                          <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                            <span>{usr.name}</span>
+                            {isCreator && (
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded-full font-semibold">
+                                অ্যাডমিন
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[10px] text-slate-400 truncate">{usr.role || 'সদস্য'}</p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMemberInGroup(currentRoomObj.id, usr.name)}
+                        disabled={isCreator}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition active:scale-95 shrink-0 flex items-center gap-1 ${
+                          isMember
+                            ? 'bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border-rose-500/30'
+                            : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-md shadow-blue-600/20'
+                        } ${isCreator ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {isMember ? (
+                          <>
+                            <Trash2 className="w-3 h-3" />
+                            <span>রিমুভ</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-3 h-3" />
+                            <span>এড করুন</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between mt-2">
+              <span className="text-[11px] text-slate-400">
+                পরিবর্তনগুলো স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsManageMembersModalOpen(false)}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow"
+              >
+                সম্পন্ন
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2901,6 +3276,238 @@ export default function Home() {
                 className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition"
               >
                 বন্ধ করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Alert & Scheduled Alarm Setup Modal */}
+      {isTaskAlertModalOpen && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl relative animate-in zoom-in-95 duration-150 overflow-y-auto">
+            <button
+              onClick={() => setIsTaskAlertModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              type="button"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-rose-600/20 text-rose-400 rounded-xl border border-rose-500/30 shrink-0">
+                <Bell className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>টাস্ক অ্যালার্ট ও সাউন্ড অ্যালার্ম</span>
+                  <span className="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full font-mono border border-rose-500/30">
+                    অটোমেটিক সংকেত
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">নির্ধারিত তারিখ ও সময়ে টাস্ক মেসেজ অটো-পোস্ট এবং মেম্বারদের সাউন্ড সহ অ্যালার্ট দিবে</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateTaskAlert} className="space-y-4">
+              {/* Task Title / Content */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  টাস্কের বিবরণ / মেসেজ <span className="text-rose-400">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder="যেমন: আজ বিকাল ৪টায় ক্লায়েন্ট মিটিং ও প্রজেক্ট জমা দেওয়া"
+                  className="w-full bg-slate-950 border border-slate-800 text-white text-xs p-3 rounded-xl focus:border-rose-500 focus:outline-none transition placeholder:text-slate-600"
+                />
+              </div>
+
+              {/* Scheduled Date & Time */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>নির্ধারিত তারিখ ও সময় (Date & Time) <span className="text-rose-400">*</span></span>
+                  <Clock className="w-3.5 h-3.5 text-rose-400" />
+                </label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={taskDateTime}
+                  onChange={(e) => setTaskDateTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-white text-xs p-3 rounded-xl focus:border-rose-500 focus:outline-none transition [color-scheme:dark]"
+                />
+              </div>
+
+              {/* Target Members Selection (কাকে কাকে অ্যালার্ম সংকেত দিবে) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>কাকে কাকে অ্যালার্ম সংকেত পাঠাবে (ট্যাগড মেম্বার)</span>
+                  <span className="text-[10px] text-rose-400 font-mono">
+                    {taskTargetMembers.includes('ALL') ? 'সকল সদস্য' : `${taskTargetMembers.length} জন`}
+                  </span>
+                </label>
+                
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 max-h-36 overflow-y-auto space-y-1">
+                  {/* Option: ALL MEMBERS */}
+                  <div
+                    onClick={() => {
+                      if (taskTargetMembers.includes('ALL')) {
+                        setTaskTargetMembers([]);
+                      } else {
+                        setTaskTargetMembers(['ALL']);
+                      }
+                    }}
+                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer border transition text-xs ${
+                      taskTargetMembers.includes('ALL')
+                        ? 'bg-rose-600/20 border-rose-500/60 text-white font-bold'
+                        : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-rose-400" />
+                      <span>@সকল_সদস্য (কমিউনিটির সবাইকে অ্যালার্ম দিবে)</span>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                      taskTargetMembers.includes('ALL') ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-500'
+                    }`}>
+                      {taskTargetMembers.includes('ALL') ? 'সিলেক্টেড' : '+ সিলেক্ট'}
+                    </span>
+                  </div>
+
+                  {/* Individual Registered Members */}
+                  {registeredUsersList.filter(u => u.name !== username).map((usr) => {
+                    const isSelected = !taskTargetMembers.includes('ALL') && taskTargetMembers.includes(usr.name);
+                    return (
+                      <div
+                        key={usr.name}
+                        onClick={() => {
+                          if (taskTargetMembers.includes('ALL')) {
+                            setTaskTargetMembers([usr.name]);
+                          } else if (isSelected) {
+                            setTaskTargetMembers(taskTargetMembers.filter(m => m !== usr.name));
+                          } else {
+                            setTaskTargetMembers([...taskTargetMembers, usr.name]);
+                          }
+                        }}
+                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer border transition text-xs ${
+                          isSelected
+                            ? 'bg-rose-600/20 border-rose-500/60 text-white font-bold'
+                            : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-base">{usr.avatar_emoji || '🧑‍💻'}</span>
+                          <span className="truncate">{usr.name}</span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          isSelected ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-500'
+                        }`}>
+                          {isSelected ? 'মার্কেড' : '+ মার্ক'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsTaskAlertModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-rose-600/20 flex items-center gap-1.5 active:scale-95"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>অ্যালার্ম শিডিউল করুন</span>
+                </button>
+              </div>
+            </form>
+
+            {/* List of Scheduled Pending Task Alerts */}
+            {taskAlerts.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-slate-800">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>চলতি শিডিউলড অ্যালার্মসমূহ</span>
+                  <span className="text-[10px] font-mono text-rose-400">{taskAlerts.filter(a => !a.isTriggered).length} টি বাকী</span>
+                </h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {taskAlerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs ${
+                        alert.isTriggered
+                          ? 'bg-slate-950/40 border-slate-800 text-slate-500'
+                          : 'bg-rose-950/20 border-rose-500/30 text-slate-200'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${alert.isTriggered ? 'bg-slate-600' : 'bg-rose-500 animate-pulse'}`} />
+                          <p className="font-bold truncate">{alert.title}</p>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-mono">
+                          ⏰ {formatExactDateTime(alert.dateTime)} • ট্যাগড: {alert.targetMembers.join(', ')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTaskAlert(alert.id)}
+                        className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition shrink-0"
+                        title="অ্যালার্ম মুছে ফেলুন"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Triggered Alarm Alert Banner / Modal */}
+      {triggeredAlarmModal && (
+        <div className="fixed inset-0 z-[150] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
+          <div className="bg-gradient-to-b from-rose-950/90 via-slate-900 to-slate-900 border-2 border-rose-500 rounded-3xl p-6 w-full max-w-md shadow-2xl text-center relative animate-bounce-short">
+            <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border-2 border-rose-500 text-rose-400 flex items-center justify-center mx-auto mb-4 animate-pulse shadow-lg shadow-rose-500/40">
+              <Bell className="w-8 h-8 animate-bounce" />
+            </div>
+
+            <span className="inline-block px-3 py-1 bg-rose-500 text-white text-[10px] font-bold uppercase tracking-wider rounded-full mb-2 shadow">
+              ⏰ নির্ধারিত অ্যালার্ম সংকেত!
+            </span>
+
+            <h3 className="text-xl font-black text-white mb-2 leading-tight">
+              {triggeredAlarmModal.title}
+            </h3>
+
+            <p className="text-xs text-rose-300 font-mono mb-4 bg-rose-950/60 p-2 rounded-xl border border-rose-500/30">
+              📅 নির্ধারিত সময়: {formatExactDateTime(triggeredAlarmModal.dateTime)}
+            </p>
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => playTaskAlarmRingtone(8000)}
+                className="px-4 py-2 bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white rounded-xl text-xs font-bold transition border border-rose-500/40 flex items-center gap-1.5"
+              >
+                <Volume2 className="w-4 h-4 animate-pulse" />
+                <span>সাউন্ড আবার বাজান</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTriggeredAlarmModal(null)}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black transition shadow-lg shadow-rose-600/30 active:scale-95"
+              >
+                ঠিক আছে (বন্ধ করুন)
               </button>
             </div>
           </div>
