@@ -1754,24 +1754,24 @@ export default function Home() {
                             <MessageSquare className="w-3.5 h-3.5" />
                           </button>
                           {isMe && (
-                            <>
-                              <button 
-                                onClick={() => handleStartEdit(msg)}
-                                className="p-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition shadow-md border border-slate-700/30"
-                                title="সম্পাদনা করুন"
-                                type="button"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button 
-                                onClick={() => setDeletingMessageId(msg.id)}
-                                className="p-1.5 bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 hover:text-rose-300 rounded-lg transition shadow-md border border-rose-900/30"
-                                title="ডিলিট করুন"
-                                type="button"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
+                            <button 
+                              onClick={() => handleStartEdit(msg)}
+                              className="p-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition shadow-md border border-slate-700/30"
+                              title="সম্পাদনা করুন"
+                              type="button"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {(isMe || isAdmin || isModerator) && (
+                            <button 
+                              onClick={() => setDeletingMessageId(msg.id)}
+                              className="p-1.5 bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 hover:text-rose-300 rounded-lg transition shadow-md border border-rose-900/30"
+                              title="ডিলিট করুন"
+                              type="button"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           )}
                         </div>
                       )}
