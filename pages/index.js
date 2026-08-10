@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload } from 'lucide-react';
+import { playMessengerSound, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2 } from 'lucide-react';
 
 const SUPABASE_SQL_SCRIPT = `-- =========================================================
 -- COMPLETE SUPABASE SCHEMA & RLS FIX SCRIPT FOR RGOMASSENGER
@@ -392,6 +393,9 @@ export default function Home() {
 
           if (eventType === 'INSERT') {
             if (payload.new && payload.new.room === activeRoom) {
+              if (payload.new.sender !== username) {
+                playMessengerSound();
+              }
               setMessages((prev) => {
                 // Avoid duplicate messages
                 if (prev.some(msg => msg.id === payload.new.id)) return prev;
@@ -1393,6 +1397,18 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                await requestNotificationPermission();
+                playMessengerSound();
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+              title="মেসেঞ্জার সাউন্ড ও নোটিফিকেশন টেস্ট করুন"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">সাউন্ড টেস্ট</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsSqlModalOpen(true)}
