@@ -92,16 +92,33 @@ export async function requestNotificationPermission() {
   return false;
 }
 
-// Show Native Mobile/Desktop Push Notification
-export function sendMessengerNotification(title, body, sender) {
+// Show Native Mobile/Desktop Push Notification via ServiceWorker or Web Notification
+export async function sendMessengerNotification(title, body, sender) {
   if (typeof window === 'undefined') return;
 
   // Play audio sound first
   playMessengerSound();
 
-  // Trigger System Push Notification
+  // Trigger System Push Notification via Service Worker or Native Notification
   if ('Notification' in window && Notification.permission === 'granted') {
     try {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration && registration.showNotification) {
+          registration.showNotification(`💬 ${title}`, {
+            body: body || 'নতুন মেসেজ এসেছে',
+            icon: '/icon.png',
+            badge: '/icon.png',
+            tag: 'messenger-msg-' + Date.now(),
+            renotify: true,
+            vibrate: [200, 100, 200],
+            data: { url: '/' }
+          });
+          return;
+        }
+      }
+
+      // Fallback to standard window Notification
       const notification = new Notification(`💬 ${title}`, {
         body: body || 'নতুন মেসেজ এসেছে',
         icon: '/icon.png',

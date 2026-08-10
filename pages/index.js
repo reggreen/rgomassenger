@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { playMessengerSound, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2 } from 'lucide-react';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX } from 'lucide-react';
 
 const SUPABASE_SQL_SCRIPT = `-- =========================================================
 -- COMPLETE SUPABASE SCHEMA & RLS FIX SCRIPT FOR RGOMASSENGER
@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS public.messages (
   room text NOT NULL DEFAULT 'general',
   sender text NOT NULL DEFAULT 'Anonymous',
   content text NOT NULL DEFAULT '',
+  is_seen boolean DEFAULT false,
+  seen_at timestamp with time zone,
   created_at timestamp with time zone DEFAULT now()
 );
 
@@ -22,6 +24,9 @@ CREATE TABLE IF NOT EXISTS public.messages (
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS room text DEFAULT 'general';
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sender text DEFAULT 'Anonymous';
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS content text DEFAULT '';
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS is_seen boolean DEFAULT false;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS seen_at timestamp with time zone;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS reactions jsonb DEFAULT '{}'::jsonb;
 
 -- Enable RLS and grant full public permissions (Read/Insert/Update/Delete)
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
@@ -203,9 +208,28 @@ const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
   });
 };
 
+const formatExactDateTime = (dateString) => {
+  if (!dateString) return 'এখনই';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return 'এখনই';
+
+  const dateFormatted = d.toLocaleDateString('bn-BD', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+  const timeFormatted = d.toLocaleTimeString('bn-BD', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  return `${dateFormatted}, ${timeFormatted}`;
+};
+
 export default function Home() {
   const router = useRouter();
-  const { user, isAdmin, isModerator, userRole } = useAuth();
+  const { user, isAdmin, isModerator, userRole, getRegisteredUsers } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [username, setUsername] = useState('');
@@ -223,6 +247,21 @@ export default function Home() {
   const [profilesMap, setProfilesMap] = useState({});
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   const profileFileInputRef = useRef(null);
+
+  // Theme & User Search / Direct Messaging States
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [registeredUsersList, setRegisteredUsersList] = useState([]);
+  const [directMessages, setDirectMessages] = useState([]);
+  const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
+
+  // Voice Recording States & Refs
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
   
   // Custom Messenger Groups & Pin State
   const [customGroups, setCustomGroups] = useState([]);
@@ -255,9 +294,25 @@ export default function Home() {
   const typingTimeoutRef = useRef(null);
   const [isTypingState, setIsTypingState] = useState(false);
 
-  // Initialize nickname, avatar, active room, custom groups, and draft message from localStorage
+  // Initialize nickname, avatar, active room, custom groups, theme, and DMs from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Restore theme
+      const savedTheme = localStorage.getItem('rg_theme_dark');
+      if (savedTheme !== null) {
+        setIsDarkMode(savedTheme === 'true');
+      }
+
+      // Restore Direct Messages
+      let loadedDMs = [];
+      const savedDMs = localStorage.getItem('rg_direct_messages');
+      if (savedDMs) {
+        try {
+          loadedDMs = JSON.parse(savedDMs);
+          setDirectMessages(loadedDMs);
+        } catch (e) {}
+      }
+
       // Restore custom groups
       let loadedCustom = [];
       const savedGroups = localStorage.getItem('rg_custom_groups');
@@ -268,8 +323,8 @@ export default function Home() {
         } catch (e) {}
       }
 
-      // Restore active channel / group room
-      const allValid = [...CHANNELS, ...loadedCustom];
+      // Restore active channel / group / DM room
+      const allValid = [...CHANNELS, ...loadedCustom, ...loadedDMs];
       const savedRoom = localStorage.getItem('rg_active_room');
       if (savedRoom && allValid.some(c => c.id === savedRoom)) {
         setActiveRoom(savedRoom);
@@ -279,6 +334,14 @@ export default function Home() {
         const savedDraft = localStorage.getItem('rg_chat_draft_general');
         if (savedDraft) setInputText(savedDraft);
       }
+    }
+
+    if (getRegisteredUsers) {
+      getRegisteredUsers().then((list) => {
+        if (list && Array.isArray(list)) {
+          setRegisteredUsersList(list);
+        }
+      });
     }
 
     let currentUsername = '';
@@ -344,6 +407,152 @@ export default function Home() {
     };
     fetchProfiles();
   }, [user]);
+
+  // Theme Toggle Handler
+  const handleToggleTheme = () => {
+    setIsDarkMode((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rg_theme_dark', String(next));
+      }
+      return next;
+    });
+  };
+
+  // Direct Messaging Helper Functions
+  const getDMRoomId = (u1, u2) => {
+    const userA = (u1 || '').toLowerCase().trim();
+    const userB = (u2 || '').toLowerCase().trim();
+    const sorted = [userA, userB].sort();
+    return `dm_${sorted[0]}_${sorted[1]}`.replace(/[^a-z0-9_]/g, '_');
+  };
+
+  const handleStartDirectMessage = (targetUser) => {
+    if (!targetUser || !username) return;
+    const targetName = targetUser.name || targetUser.email?.split('@')[0] || 'ইউজার';
+    if (targetName === username) return;
+
+    const dmId = getDMRoomId(username, targetName);
+
+    const existingIndex = directMessages.findIndex((dm) => dm.id === dmId);
+    let updatedDMs = [...directMessages];
+
+    if (existingIndex < 0) {
+      const newDM = {
+        id: dmId,
+        targetName: targetName,
+        targetEmail: targetUser.email || '',
+        avatarEmoji: targetUser.avatar_emoji || '👤',
+        targetRole: targetUser.role || 'মেম্বার'
+      };
+      updatedDMs = [newDM, ...directMessages];
+      setDirectMessages(updatedDMs);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rg_direct_messages', JSON.stringify(updatedDMs));
+      }
+    }
+
+    setActiveRoom(dmId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_active_room', dmId);
+    }
+    setIsUserSearchOpen(false);
+  };
+
+  const handleDeleteDM = (dmId, e) => {
+    e.stopPropagation();
+    const filtered = directMessages.filter((dm) => dm.id !== dmId);
+    setDirectMessages(filtered);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_direct_messages', JSON.stringify(filtered));
+    }
+    if (activeRoom === dmId) {
+      setActiveRoom('general');
+    }
+  };
+
+  // Voice Recording Functions
+  const formatRecordingTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      if (typeof window === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('আপনার ব্রাউজারে মাইক্রোফোন সাপোর্ট নেই বা ব্লকড রয়েছে।');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+
+      let options = {};
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options = { mimeType: 'audio/mp4' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          options = { mimeType: 'audio/ogg' };
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          setRecordedAudioUrl(reader.result);
+        };
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Microphone error:', err);
+      alert('মাইক্রোফোন চালু করা যায়নি। দয়া করে ব্রাউজারের মাইক্রোফোন পারমিশন এনাবল করুন।');
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    setIsRecording(false);
+  };
+
+  const handleCancelRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    setIsRecording(false);
+    setRecordedAudioUrl(null);
+    setRecordingTime(0);
+  };
 
   // Fetch messages and subscribe to real-time changes
   useEffect(() => {
@@ -438,6 +647,41 @@ export default function Home() {
       subscription.unsubscribe();
     };
   }, [activeRoom, username]);
+
+  // Mark unread messages in activeRoom as seen
+  useEffect(() => {
+    if (!username || !activeRoom || messages.length === 0) return;
+
+    const unreadMessages = messages.filter(
+      (m) => m.sender !== username && !m.is_seen
+    );
+
+    if (unreadMessages.length > 0) {
+      const unreadIds = unreadMessages
+        .map((m) => m.id)
+        .filter((id) => typeof id === 'string' && !id.startsWith('temp_'));
+
+      if (unreadIds.length > 0) {
+        const nowIso = new Date().toISOString();
+
+        // Optimistically update local state immediately
+        setMessages((prev) =>
+          prev.map((m) => (unreadIds.includes(m.id) ? { ...m, is_seen: true, seen_at: nowIso } : m))
+        );
+
+        // Update database in background
+        supabase
+          .from('messages')
+          .update({ is_seen: true, seen_at: nowIso })
+          .in('id', unreadIds)
+          .then(({ error }) => {
+            if (error) {
+              console.warn('Notice updating seen status in DB:', error.message);
+            }
+          });
+      }
+    }
+  }, [activeRoom, username, messages]);
 
   // Realtime Presence & Active Users tracking
   useEffect(() => {
@@ -767,14 +1011,18 @@ export default function Home() {
           },
           avatar: selectedAvatarId,
           customAvatarUrl: resolvedCustomAvatar,
-          image: selectedImage
+          image: selectedImage,
+          audio: recordedAudioUrl,
+          audioDuration: recordingTime
         });
       } else {
         finalContent = JSON.stringify({
           text: inputText.trim(),
           avatar: selectedAvatarId,
           customAvatarUrl: resolvedCustomAvatar,
-          image: selectedImage
+          image: selectedImage,
+          audio: recordedAudioUrl,
+          audioDuration: recordingTime
         });
       }
 
@@ -796,6 +1044,8 @@ export default function Home() {
         localStorage.removeItem(`rg_chat_draft_${activeRoom}`);
       }
       setSelectedImage(null);
+      setRecordedAudioUrl(null);
+      setRecordingTime(0);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -976,6 +1226,48 @@ export default function Home() {
     }
   };
 
+  // Reaction Handler
+  const handleAddReaction = async (msg, emoji) => {
+    if (!username) return;
+    try {
+      const currentReactions = msg.reactions || {};
+      const userList = currentReactions[emoji] || [];
+
+      let updatedUserList = [];
+      if (userList.includes(username)) {
+        // Toggle off if already reacted
+        updatedUserList = userList.filter((u) => u !== username);
+      } else {
+        // Add reaction
+        updatedUserList = [...userList, username];
+      }
+
+      const updatedReactions = { ...currentReactions };
+      if (updatedUserList.length === 0) {
+        delete updatedReactions[emoji];
+      } else {
+        updatedReactions[emoji] = updatedUserList;
+      }
+
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, reactions: updatedReactions } : m))
+      );
+
+      // Persist in DB
+      const { error } = await supabase
+        .from('messages')
+        .update({ reactions: updatedReactions })
+        .eq('id', msg.id);
+
+      if (error) {
+        console.warn('Reactions DB update warning:', error.message);
+      }
+    } catch (err) {
+      console.error('Error toggling reaction:', err);
+    }
+  };
+
   // Calculate combined rooms & pinned messages
   const allRooms = [
     ...CHANNELS.map(c => ({ ...c, isCustom: false, emoji: null })),
@@ -986,9 +1278,27 @@ export default function Home() {
       isCustom: true,
       emoji: g.emoji || '💬',
       createdBy: g.createdBy
+    })),
+    ...directMessages.map(dm => ({
+      id: dm.id,
+      name: `💬 ${dm.targetName}`,
+      desc: `ডাইরেক্ট মেসেজ (${dm.targetRole || 'সদস্য'})`,
+      isCustom: true,
+      isDM: true,
+      emoji: dm.avatarEmoji || '👤',
+      targetName: dm.targetName
     }))
   ];
   const currentRoomObj = allRooms.find(r => r.id === activeRoom) || CHANNELS[0];
+
+  const filteredUsers = registeredUsersList.filter((usr) => {
+    const q = (userSearchQuery || '').trim().toLowerCase();
+    if (!q) return true;
+    const nameMatch = (usr.name || '').toLowerCase().includes(q);
+    const emailMatch = (usr.email || '').toLowerCase().includes(q);
+    const roleMatch = (usr.role || '').toLowerCase().includes(q);
+    return nameMatch || emailMatch || roleMatch;
+  }).filter((usr) => usr.name !== username);
 
   const pinnedMessages = messages.filter((msg) => {
     if (!msg.content) return false;
@@ -1177,6 +1487,95 @@ export default function Home() {
           </div>
         </div>
 
+        {/* User Search & Direct Chat Search Bar */}
+        <div className={`p-3 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-100/80 border-slate-200'}`}>
+          <div className="relative">
+            <Search className={`w-3.5 h-3.5 absolute left-3 top-2.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+            <input
+              type="text"
+              placeholder="সদস্য বা বন্ধুদের খুঁজুন..."
+              value={userSearchQuery}
+              onChange={(e) => {
+                setUserSearchQuery(e.target.value);
+                if (!isUserSearchOpen) setIsUserSearchOpen(true);
+              }}
+              onFocus={() => setIsUserSearchOpen(true)}
+              className={`w-full text-xs pl-8 pr-7 py-2 rounded-xl border focus:outline-none transition ${
+                isDarkMode
+                  ? 'bg-slate-900 border-slate-700/80 text-white placeholder-slate-500 focus:border-blue-500'
+                  : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-blue-500 shadow-sm'
+              }`}
+            />
+            {userSearchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUserSearchQuery('');
+                  setIsUserSearchOpen(false);
+                }}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Results Dropdown Panel */}
+          {isUserSearchOpen && (
+            <div className={`mt-2 p-2.5 rounded-xl border shadow-2xl max-h-64 overflow-y-auto space-y-1.5 animate-in fade-in duration-150 relative z-30 ${
+              isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200 shadow-lg'
+            }`}>
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/60 px-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
+                  <UserPlus className="w-3 h-3" />
+                  সদস্য তালিকা ({filteredUsers.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsUserSearchOpen(false)}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 p-0.5 rounded"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+
+              {filteredUsers.length === 0 ? (
+                <p className="text-[11px] text-slate-500 p-2 text-center">কোনো ইউজার খুঁজে পাওয়া যায়নি</p>
+              ) : (
+                filteredUsers.map((usr) => (
+                  <div
+                    key={usr.email || usr.id || usr.name}
+                    className={`flex items-center justify-between p-2 rounded-lg border transition ${
+                      isDarkMode
+                        ? 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-800/80'
+                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate min-w-0">
+                      <span className="text-base flex-shrink-0">{usr.avatar_emoji || '🧑‍💻'}</span>
+                      <div className="truncate">
+                        <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                          {usr.name}
+                        </p>
+                        <p className="text-[10px] text-slate-500 truncate">{usr.role || 'সদস্য'}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleStartDirectMessage(usr)}
+                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-bold px-2.5 py-1 rounded-lg transition active:scale-95 shadow-sm shrink-0 flex items-center gap-1"
+                      title={`${usr.name} কে মেসেজ পাঠান`}
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      মেসেজ
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Channels List */}
         <div className="p-4 flex-1 overflow-y-auto space-y-4">
           <div>
@@ -1300,6 +1699,55 @@ export default function Home() {
             )}
           </div>
 
+          {/* Direct Messages Section */}
+          {directMessages.length > 0 && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2 mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>ডাইরেক্ট মেসেজ (DMs)</span>
+                </span>
+                <span className="text-[10px] font-mono">{directMessages.length} টি</span>
+              </h4>
+              <div className="space-y-1">
+                {directMessages.map((dm) => {
+                  const isActive = activeRoom === dm.id;
+                  return (
+                    <div
+                      key={dm.id}
+                      onClick={() => handleSelectRoom(dm.id)}
+                      className={`w-full text-left flex items-center justify-between gap-2 p-2 rounded-xl transition duration-150 cursor-pointer group/dm ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                          : isDarkMode
+                          ? 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate min-w-0">
+                        <span className="text-base flex-shrink-0">{dm.avatarEmoji || '👤'}</span>
+                        <div className="truncate">
+                          <p className="text-xs font-bold truncate">{dm.targetName}</p>
+                          <p className={`text-[10px] truncate ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
+                            {dm.targetRole || 'ব্যক্তিগত চ্যাট'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteDM(dm.id, e)}
+                        className="opacity-0 group-hover/dm:opacity-100 text-slate-400 hover:text-rose-400 p-1 rounded transition"
+                        title="চ্যাট রিমুভ করুন"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Online Active Members Sidebar Section */}
           <div className="pt-2 border-t border-slate-800/80">
             <div className="flex items-center justify-between px-2 mb-2">
@@ -1373,9 +1821,9 @@ export default function Home() {
       </div>
 
       {/* Right Chat Area */}
-      <div className="flex-1 flex flex-col bg-slate-900/40 h-full overflow-hidden relative min-w-0">
+      <div className={`flex-1 flex flex-col h-full overflow-hidden relative min-w-0 transition-colors duration-200 ${isDarkMode ? 'bg-slate-900/40' : 'bg-slate-50'}`}>
         {/* Chat Room Header */}
-        <div className="px-4 md:px-6 py-3.5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between flex-shrink-0 z-10">
+        <div className={`px-4 md:px-6 py-3.5 border-b flex items-center justify-between flex-shrink-0 z-10 transition-colors duration-200 ${isDarkMode ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white shadow-sm'}`}>
           <div className="flex items-center gap-2.5">
             {currentRoomObj.isCustom ? (
               <span className="text-xl flex-shrink-0">{currentRoomObj.emoji || '💬'}</span>
@@ -1383,20 +1831,34 @@ export default function Home() {
               <Hash className="w-5 h-5 text-blue-500" />
             )}
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <h3 className={`text-base font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 <span>{currentRoomObj.name}</span>
                 {currentRoomObj.isCustom && (
-                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-normal">
-                    কাস্টম গ্রুপ
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-normal">
+                    {currentRoomObj.isDM ? 'ডাইরেক্ট মেসেজ' : 'কাস্টম গ্রুপ'}
                   </span>
                 )}
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {currentRoomObj.desc}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Theme Toggle Button */}
+            <button
+              type="button"
+              onClick={handleToggleTheme}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
+                isDarkMode
+                  ? 'bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+              }`}
+              title={isDarkMode ? 'লাইট মোড এ পরিবর্তন করুন' : 'ডার্ক মোড এ পরিবর্তন করুন'}
+            >
+              {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
+              <span className="hidden sm:inline">{isDarkMode ? 'লাইট মোড' : 'ডার্ক মোড'}</span>
+            </button>
             <button
               type="button"
               onClick={async () => {
@@ -1542,6 +2004,8 @@ export default function Home() {
               let messageAvatarId = null;
               let messageImage = null;
               let messageCustomAvatarUrl = null;
+              let messageAudio = null;
+              let messageAudioDuration = null;
               
               if (msg.content && msg.content.startsWith('{"text":')) {
                 try {
@@ -1554,6 +2018,8 @@ export default function Home() {
                   messageAvatarId = parsed.avatar;
                   messageImage = parsed.image;
                   messageCustomAvatarUrl = parsed.customAvatarUrl;
+                  messageAudio = parsed.audio;
+                  messageAudioDuration = parsed.audioDuration;
                 } catch (e) {
                   // Fallback
                 }
@@ -1617,8 +2083,8 @@ export default function Home() {
                         )}
                       </span>
                       <span>•</span>
-                      <span className="font-mono">
-                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'এখনই'}
+                      <span className="font-mono text-[10px] text-slate-400" title={msg.created_at ? new Date(msg.created_at).toLocaleString('bn-BD') : ''}>
+                        {formatExactDateTime(msg.created_at)}
                       </span>
                       {isEdited && (
                         <span className="bg-slate-800/80 px-1.5 py-0.2 rounded text-[9px] text-slate-400 select-none">
@@ -1631,8 +2097,10 @@ export default function Home() {
                       {/* Message Bubble */}
                       <div className={`max-w-[100%] rounded-2xl px-4 py-2.5 text-sm shadow-sm relative ${
                         isMe 
-                          ? 'bg-blue-600 text-white rounded-tr-none' 
-                          : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/60'
+                          ? 'bg-blue-600 text-white rounded-tr-none shadow-md' 
+                          : isDarkMode
+                          ? 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/60'
+                          : 'bg-white text-slate-900 rounded-tl-none border border-slate-200 shadow-sm'
                       } ${isPinned ? 'ring-1 ring-amber-400/80 shadow-md shadow-amber-500/10' : ''}`}>
                         
                         {/* Pinned Badge inside Bubble */}
@@ -1668,6 +2136,34 @@ export default function Home() {
                               onClick={() => setLightboxImage(messageImage)}
                               className="max-h-56 w-full object-cover rounded-xl group-hover/img:scale-[1.02] transition duration-200"
                               referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+
+                        {messageAudio && (
+                          <div className={`mt-2 p-2.5 rounded-xl border flex flex-col gap-1.5 max-w-[280px] sm:max-w-xs shadow-md ${
+                            isMe
+                              ? 'bg-blue-700/60 border-blue-400/40 text-white'
+                              : isDarkMode
+                              ? 'bg-slate-900/90 border-slate-700/70 text-slate-200'
+                              : 'bg-slate-100 border-slate-300 text-slate-800'
+                          }`}>
+                            <div className="flex items-center justify-between text-xs font-bold gap-2">
+                              <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider opacity-90">
+                                <Mic className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                                <span>ভয়েস মেসেজ</span>
+                              </span>
+                              {messageAudioDuration > 0 && (
+                                <span className="text-[10px] font-mono opacity-80 px-1.5 py-0.5 rounded bg-black/20">
+                                  {formatRecordingTime(messageAudioDuration)}
+                                </span>
+                              )}
+                            </div>
+                            <audio 
+                              src={messageAudio} 
+                              controls 
+                              controlsList="nodownload" 
+                              className="w-full h-8 rounded-lg outline-none"
                             />
                           </div>
                         )}
@@ -1708,9 +2204,56 @@ export default function Home() {
                             </a>
                           );
                         })()}
+
+                        {/* Message Reactions display */}
+                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                          <div className={`flex flex-wrap items-center gap-1 mt-1.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            {Object.entries(msg.reactions).map(([emoji, users]) => {
+                              const hasReacted = users.includes(username);
+                              return (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleAddReaction(msg, emoji)}
+                                  className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition active:scale-95 shadow-sm ${
+                                    hasReacted
+                                      ? 'bg-indigo-600/30 text-indigo-200 border-indigo-500/50'
+                                      : 'bg-slate-900/60 text-slate-300 border-slate-700/50 hover:bg-slate-800'
+                                  }`}
+                                  title={`${users.join(', ')} রিঅ্যাক্ট করেছেন`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span className="text-[10px] font-bold text-slate-300">{users.length}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Seen / Read Receipt Badge for Sent Messages */}
+                        {isMe && (
+                          <div className="flex items-center justify-end gap-1 mt-1.5 text-[10px] select-none">
+                            {msg.is_seen ? (
+                              <span 
+                                className="flex items-center gap-1 text-cyan-200 font-semibold bg-slate-950/40 px-2 py-0.5 rounded-full border border-cyan-500/30 shadow-sm"
+                                title={msg.seen_at ? `দেখেছেন: ${formatExactDateTime(msg.seen_at)}` : 'মেসেজটি দেখেছেন'}
+                              >
+                                <CheckCheck className="w-3.5 h-3.5 text-cyan-300" />
+                                <span className="text-[9px]">দেখা হয়েছে</span>
+                              </span>
+                            ) : (
+                              <span 
+                                className="flex items-center gap-1 text-slate-300/80 font-medium bg-slate-950/20 px-2 py-0.5 rounded-full border border-slate-700/30"
+                                title="পৌঁছেছে (ডেলিভার্ড)"
+                              >
+                                <CheckCheck className="w-3.5 h-3.5 text-slate-300/70" />
+                                <span className="text-[9px]">ডেলিভার্ড</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Action buttons (Reply, Edit, Delete) - Shows on Hover */}
+                      {/* Action buttons (Reactions, Reply, Edit, Delete) - Shows on Hover */}
                       {deletingMessageId === msg.id ? (
                         <div className="flex items-center gap-1.5 animate-in fade-in duration-100 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 shadow-lg ml-2">
                           <span className="text-[10px] text-slate-400 font-bold">মুছবেন?</span>
@@ -1733,6 +2276,21 @@ export default function Home() {
                         <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 ${
                           isMe ? 'mr-2 order-first' : 'ml-2'
                         }`}>
+                          {/* Quick Emoji Reaction Buttons */}
+                          <div className="flex items-center gap-0.5 bg-slate-900/90 border border-slate-700/60 rounded-xl p-1 shadow-md">
+                            {['❤️', '👍', '😂', '😮', '🔥'].map((emoji) => (
+                              <button
+                                key={emoji}
+                                onClick={() => handleAddReaction(msg, emoji)}
+                                className="p-1 hover:bg-slate-800 rounded text-xs transition hover:scale-125"
+                                title={`${emoji} রিঅ্যাকশন দিন`}
+                                type="button"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+
                           <button 
                             onClick={() => handleTogglePinMessage(msg)}
                             className={`p-1.5 rounded-lg transition shadow-md border ${
@@ -1839,7 +2397,9 @@ export default function Home() {
         )}
 
         {/* Chat Input Bar */}
-        <form onSubmit={handleSendMessage} className="p-3 md:p-4 border-t border-slate-800 bg-slate-900/95 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
+        <form onSubmit={handleSendMessage} className={`p-3 md:p-4 border-t transition-colors duration-200 flex-shrink-0 sticky bottom-0 z-10 ${
+          isDarkMode ? 'border-slate-800 bg-slate-900/95 backdrop-blur-md' : 'border-slate-200 bg-white shadow-lg'
+        }`}>
           {/* Quick Emoji Panel */}
           <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-800 select-none">
             <span className="text-[11px] text-slate-500 font-medium mr-1 flex items-center gap-1">
@@ -1881,6 +2441,37 @@ export default function Home() {
             </div>
           )}
 
+          {/* Voice Audio Preview Card */}
+          {recordedAudioUrl && (
+            <div className={`mb-3 p-2.5 rounded-xl border flex items-center justify-between gap-3 animate-in fade-in duration-200 ${
+              isDarkMode ? 'bg-slate-950 border-rose-500/40' : 'bg-rose-50 border-rose-200'
+            }`}>
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <div className="p-2 rounded-lg bg-rose-500/20 text-rose-500 shrink-0">
+                  <Mic className="w-4 h-4 animate-pulse" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-rose-400 mb-1">
+                    <span>রেকর্ড করা ভয়েস মেসেজ (রেডি)</span>
+                    {recordingTime > 0 && <span className="font-mono">{formatRecordingTime(recordingTime)}</span>}
+                  </div>
+                  <audio src={recordedAudioUrl} controls className="w-full h-8 outline-none rounded-lg" />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecordedAudioUrl(null);
+                  setRecordingTime(0);
+                }}
+                className="p-2 text-slate-400 hover:text-rose-400 rounded-lg transition shrink-0"
+                title="ভয়েস মেসেজটি মুছে ফেলুন"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <input
               type="file"
@@ -1906,17 +2497,77 @@ export default function Home() {
             >
               <ImageIcon className="w-4 h-4" />
             </button>
-            <input
-              type="text"
-              value={inputText}
-              onChange={handleInputChange}
-              placeholder={editingMessage ? "বার্তাটি সম্পাদন করুন..." : "আপনার বার্তা এখানে লিখুন..."}
-              className="flex-1 bg-slate-950 border border-slate-800 focus:border-blue-500 text-white text-sm px-4 py-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all duration-200 placeholder:text-slate-600"
-            />
+
+            {/* Voice Record Button */}
+            <button
+              type="button"
+              onClick={isRecording ? handleStopRecording : handleStartRecording}
+              className={`font-bold p-3.5 rounded-xl border active:scale-95 transition-all duration-150 flex items-center justify-center flex-shrink-0 ${
+                isRecording
+                  ? 'bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-600/30 animate-pulse'
+                  : recordedAudioUrl
+                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                  : isDarkMode
+                  ? 'bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/60'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+              }`}
+              title={isRecording ? "রেকর্ডিং থামান" : "ভয়েস মেসেজ রেকর্ড করুন"}
+            >
+              <Mic className={`w-4 h-4 ${isRecording ? 'animate-bounce' : ''}`} />
+            </button>
+
+            {isRecording ? (
+              <div className={`flex-1 flex items-center justify-between gap-2.5 px-3 md:px-4 py-2.5 rounded-xl border ${
+                isDarkMode ? 'bg-slate-950 border-rose-500/60 text-white shadow-inner' : 'bg-rose-50 border-rose-300 text-slate-900'
+              }`}>
+                <div className="flex items-center gap-2 truncate">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
+                  <span className="text-xs font-bold text-rose-500 truncate">
+                    রেকর্ডিং চলছে...
+                  </span>
+                  <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20 shrink-0">
+                    {formatRecordingTime(recordingTime)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCancelRecording}
+                    className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg transition"
+                    title="রেকর্ডিং বাতিল করুন"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStopRecording}
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs transition flex items-center gap-1 shadow-sm active:scale-95"
+                    title="রেকর্ডিং শেষ করে প্রিভিউ করুন"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-white" />
+                    <span>থামান</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={inputText}
+                onChange={handleInputChange}
+                placeholder={editingMessage ? "বার্তাটি সম্পাদন করুন..." : "আপনার বার্তা এখানে লিখুন..."}
+                className={`flex-1 border text-sm px-4 py-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all duration-200 ${
+                  isDarkMode
+                    ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600 focus:border-blue-500'
+                    : 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 shadow-inner'
+                }`}
+              />
+            )}
+
             <button
               type="submit"
-              disabled={isSending || (!inputText.trim() && !selectedImage)}
+              disabled={isSending || (!inputText.trim() && !selectedImage && !recordedAudioUrl)}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white font-bold p-3.5 rounded-xl shadow-lg shadow-blue-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center flex-shrink-0"
+              title="বার্তা পাঠান"
             >
               {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
             </button>

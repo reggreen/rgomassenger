@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AuthProvider } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import HeadlineTicker from '../components/HeadlineTicker';
@@ -7,6 +8,14 @@ import DashboardLayout from '../components/DashboardLayout';
 import '../styles/globals.css';
 
 function MyApp({ Component, pageProps }) {
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('Service Worker registration failed:', err);
+      });
+    }
+  }, []);
+
   // Use custom page layout if defined, otherwise default to persistent DashboardLayout
   const getLayout = Component.getLayout !== undefined
     ? Component.getLayout
