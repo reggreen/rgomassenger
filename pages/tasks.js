@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Bell, Calendar, Clock, Mail, Plus, X, CheckCircle, AlertTriangle, Search, Trash2, Edit3, AlertCircle, Sparkles } from 'lucide-react';
+import { Bell, Calendar, Clock, Mail, Plus, X, CheckCircle, AlertTriangle, Search, Trash2, Edit3, AlertCircle, Sparkles, Volume2, ShieldCheck } from 'lucide-react';
+import { syncAllAlarmsWithServiceWorker, scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, triggerTestSWAlarm } from '../utils/alarmScheduler';
+import { requestNotificationPermission, playTaskAlarmRingtone } from '../utils/messengerSound';
 
 const CATEGORIES = ['সব ক্যাটাগরি', 'মিটিং/আলোচনা', 'ইভেন্ট নোটিশ', 'বিলিং ডেডলাইন', 'গুরুত্বপূর্ণ রিমাইন্ডার', 'অন্যান্য'];
 const PRIORITIES = ['সাধারণ', 'মাঝারি', 'জরুরি'];
@@ -79,7 +81,11 @@ export default function Tasks() {
         setDbError(error.message || JSON.stringify(error));
       } else {
         setDbError(null);
-        if (data) setTasks(data);
+        if (data) {
+          setTasks(data);
+          // Sync all pending tasks with background Service Worker scheduler
+          syncAllAlarmsWithServiceWorker(data);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -282,13 +288,29 @@ export default function Tasks() {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenModal}
-          className="bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-violet-500/15 active:scale-95 transition-all duration-150 flex items-center gap-2 text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>নতুন রিমাইন্ডার যোগ করুন</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={async () => {
+              await requestNotificationPermission();
+              playTaskAlarmRingtone(4000);
+              await triggerTestSWAlarm();
+            }}
+            className="bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-violet-500/30 font-bold px-4 py-3 rounded-xl shadow-md active:scale-95 transition flex items-center gap-2 text-xs"
+            title="সার্ভিস ওয়ার্কার ব্যাকগ্রাউন্ড সাউন্ড ও অ্যালার্ম নোটিফিকেশন টেস্ট করুন"
+          >
+            <Volume2 className="w-4 h-4 text-amber-400" />
+            <span>অ্যালার্ম সাউন্ড টেস্ট</span>
+          </button>
+
+          <button
+            onClick={handleOpenModal}
+            className="bg-violet-600 hover:bg-violet-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-violet-500/15 active:scale-95 transition-all duration-150 flex items-center gap-2 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>নতুন রিমাইন্ডার যোগ করুন</span>
+          </button>
+        </div>
       </div>
 
       {/* Database Setup Error Notice */}

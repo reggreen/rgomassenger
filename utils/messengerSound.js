@@ -1,6 +1,7 @@
 // Messenger Notification Sound & Push Notification Engine
 
 let audioCtx = null;
+let alarmAudioElement = null;
 
 function getAudioContext() {
   if (typeof window === 'undefined') return null;
@@ -11,87 +12,113 @@ function getAudioContext() {
     }
   }
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    audioCtx.resume().catch(() => {});
   }
   return audioCtx;
 }
 
 // Play original Messenger-style double chime sound
 export function playMessengerSound() {
+  if (typeof window === 'undefined') return;
+
+  // Try Web Audio API first
   try {
     const ctx = getAudioContext();
-    if (!ctx) return;
+    if (ctx && ctx.state === 'running') {
+      const now = ctx.currentTime;
 
-    const now = ctx.currentTime;
+      // Tone 1: First high pop (E6 - 1318.51 Hz)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
 
-    // Tone 1: First high pop (E6 - 1318.51 Hz)
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1318.51, now);
+      osc1.frequency.exponentialRampToValueAtTime(1567.98, now + 0.08);
 
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(1318.51, now); // E6
-    osc1.frequency.exponentialRampToValueAtTime(1567.98, now + 0.08); // G6 quick pitch pop
+      gain1.gain.setValueAtTime(0.28, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
-    gain1.gain.setValueAtTime(0.25, now);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
 
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.15);
 
-    osc1.start(now);
-    osc1.stop(now + 0.15);
+      // Tone 2: Second harmonizing chime
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
 
-    // Tone 2: Second harmonizing chime (C6 - 1046.50 Hz -> E6 - 1318.51 Hz) slightly delayed
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1046.50, now + 0.07);
+      osc2.frequency.exponentialRampToValueAtTime(1318.51, now + 0.22);
 
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(1046.50, now + 0.07);
-    osc2.frequency.exponentialRampToValueAtTime(1318.51, now + 0.22);
+      gain2.gain.setValueAtTime(0.22, now + 0.07);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
 
-    gain2.gain.setValueAtTime(0.2, now + 0.07);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
 
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-
-    osc2.start(now + 0.07);
-    osc2.stop(now + 0.28);
+      osc2.start(now + 0.07);
+      osc2.stop(now + 0.28);
+      return;
+    }
   } catch (err) {
-    console.warn('Audio chime play blocked or failed:', err);
+    // fallback below
   }
+
+  // Fallback to HTML5 Audio element
+  try {
+    const audio = new Audio('/messenger.wav');
+    audio.volume = 0.8;
+    audio.play().catch(() => {});
+  } catch (e) {}
 }
 
 // Play a continuous 8-10 second ringing alarm tone for scheduled tasks
-export function playTaskAlarmRingtone(durationMs = 8000) {
+export function playTaskAlarmRingtone(durationMs = 10000) {
+  if (typeof window === 'undefined') return () => {};
+
+  let isStopped = false;
+
+  // 1. Play dedicated /alarm.wav audio element
   try {
-    const ctx = getAudioContext();
-    if (!ctx) return () => {};
+    if (!alarmAudioElement) {
+      alarmAudioElement = new Audio('/alarm.wav');
+    }
+    alarmAudioElement.currentTime = 0;
+    alarmAudioElement.volume = 1.0;
+    alarmAudioElement.loop = true;
+    const playPromise = alarmAudioElement.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {});
+    }
+  } catch (e) {}
 
-    let isStopped = false;
-    const intervalId = setInterval(() => {
-      if (isStopped) return;
-      playMessengerSound();
-    }, 600);
-
-    // Initial immediate play
+  // 2. Also run Web Audio chimes interval for high-frequency alarms
+  const intervalId = setInterval(() => {
+    if (isStopped) return;
     playMessengerSound();
+  }, 650);
 
-    const stopFn = () => {
-      isStopped = true;
-      clearInterval(intervalId);
-    };
+  playMessengerSound();
 
-    // Auto stop after duration
-    setTimeout(() => {
-      stopFn();
-    }, durationMs);
+  const stopFn = () => {
+    isStopped = true;
+    clearInterval(intervalId);
+    try {
+      if (alarmAudioElement) {
+        alarmAudioElement.pause();
+        alarmAudioElement.currentTime = 0;
+      }
+    } catch (e) {}
+  };
 
-    return stopFn;
-  } catch (err) {
-    console.warn('Alarm ringtone play failed:', err);
-    return () => {};
-  }
+  // Auto stop after duration
+  setTimeout(() => {
+    stopFn();
+  }, durationMs);
+
+  return stopFn;
 }
 
 // Request permission for push notifications and unlock AudioContext

@@ -3,7 +3,16 @@ import { useRouter } from 'next/router';
 import { supabase, sendTypingStatus } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle } from 'lucide-react';
+import { scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, syncAllAlarmsWithServiceWorker } from '../utils/alarmScheduler';
+import VoiceMessageBubble from '../components/VoiceMessageBubble';
+import ImageMessageBubble from '../components/ImageMessageBubble';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle, Phone, PhoneCall, PhoneOff, Video, VideoOff, Info, MoreHorizontal, ThumbsUp, MessageCircle, SlidersHorizontal, Share2, CornerDownRight, Download, ZoomIn, Settings, Crown, LogOut, UserMinus } from 'lucide-react';
+
+const GROUP_PRESET_EMOJIS = [
+  '💬', '🚀', '🔥', '🎮', '⚽', '💡', '🎉', '❤️',
+  '🏢', '👑', '🛡️', '📚', '☕', '🎨', '🎵', '🌟',
+  '💻', '⚡', '🏆', '🌍', '✈️', '🍕', '🎯', '✨'
+];
 
 const SUPABASE_SQL_SCRIPT = `-- =========================================================
 -- COMPLETE SUPABASE SCHEMA & RLS FIX SCRIPT FOR RGOMASSENGER
@@ -263,16 +272,28 @@ export default function Home() {
   const audioChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
   
-  // Custom Messenger Groups & Pin State
+  // Custom Messenger Groups, Renaming & Avatar States
   const [customGroups, setCustomGroups] = useState([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDesc, setNewGroupDesc] = useState('');
   const [newGroupEmoji, setNewGroupEmoji] = useState('💬');
+  const [newGroupAvatarUrl, setNewGroupAvatarUrl] = useState(null);
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
   const [isManageMembersModalOpen, setIsManageMembersModalOpen] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
+
+  // Group Management & Edit Settings Modal State
+  const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupDesc, setEditGroupDesc] = useState('');
+  const [editGroupEmoji, setEditGroupEmoji] = useState('💬');
+  const [editGroupAvatarUrl, setEditGroupAvatarUrl] = useState(null);
+  const [editGroupTab, setEditGroupTab] = useState('info'); // 'info' | 'members'
+  const groupAvatarFileInputRef = useRef(null);
+  const createGroupAvatarFileInputRef = useRef(null);
 
   // Task Alert & Scheduled Alarm States
   const [taskAlerts, setTaskAlerts] = useState([]);
@@ -284,7 +305,59 @@ export default function Home() {
 
   const [selectedImage, setSelectedImage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Clipboard Paste Handler for Images
+  const handlePasteImage = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          try {
+            const compressed = await resizeImage(file, 1000, 1000, 0.75);
+            setSelectedImage(compressed);
+          } catch (err) {
+            console.error('Image paste error:', err);
+          }
+          break;
+        }
+      }
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+  };
+
+  const handleDropFile = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        try {
+          const compressed = await resizeImage(file, 1000, 1000, 0.75);
+          setSelectedImage(compressed);
+        } catch (err) {
+          console.error('Image drop error:', err);
+        }
+      }
+    }
+  };
 
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -292,6 +365,12 @@ export default function Home() {
   // Online Users & Realtime Presence state
   const [onlineUsers, setOnlineUsers] = useState({});
   const [isOnlineListOpen, setIsOnlineListOpen] = useState(false);
+
+  // Modern Messenger UI States: Tabs, Call Simulation, Info Drawer
+  const [sidebarTab, setSidebarTab] = useState('all'); // 'all' | 'dms' | 'groups'
+  const [isInfoDrawerOpen, setIsInfoDrawerOpen] = useState(false);
+  const [activeCall, setActiveCall] = useState(null); // { type: 'audio'|'video', targetName, status: 'ringing'|'connected', duration: 0, isMuted: false, isVideoOff: false }
+  const callTimerRef = useRef(null);
 
   const handleCopySql = () => {
     if (typeof window !== 'undefined' && navigator.clipboard) {
@@ -598,6 +677,9 @@ export default function Home() {
       localStorage.setItem('rg_scheduled_task_alerts', JSON.stringify(updated));
     }
 
+    // Register with Background Service Worker
+    scheduleServiceWorkerAlarm(newAlert);
+
     setTaskTitle('');
     setTaskDateTime('');
     setTaskTargetMembers(['ALL']);
@@ -612,6 +694,8 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('rg_scheduled_task_alerts', JSON.stringify(updated));
     }
+    // Cancel in Service Worker
+    cancelServiceWorkerAlarm(alertId);
   };
 
   // Background Interval Checker for Scheduled Task Alerts
@@ -1063,7 +1147,7 @@ export default function Home() {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if ((!inputText.trim() && !selectedImage) || isSending) return;
+    if ((!inputText.trim() && !selectedImage && !recordedAudioUrl) || isSending) return;
 
     setIsSending(true);
 
@@ -1215,6 +1299,102 @@ export default function Home() {
     }
   };
 
+  // Messenger Instant Quick Like (Thumbs-Up 👍) Handler
+  const handleSendQuickLike = async () => {
+    if (isSending || !username) return;
+    setIsSending(true);
+    const resolvedCustomAvatar = customAvatarUrl || user?.custom_avatar_url || (typeof window !== 'undefined' ? localStorage.getItem('rg_custom_avatar_url') : null);
+    const finalContent = JSON.stringify({
+      text: '👍',
+      isQuickLike: true,
+      avatar: selectedAvatarId,
+      customAvatarUrl: resolvedCustomAvatar
+    });
+
+    const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const optimisticMsg = {
+      id: tempId,
+      room: activeRoom,
+      sender: username,
+      content: finalContent,
+      created_at: new Date().toISOString()
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    playMessengerSound();
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          room: activeRoom,
+          sender: username,
+          content: finalContent
+        })
+        .select();
+
+      if (!error && data && data.length > 0) {
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === tempId ? data[0] : msg))
+        );
+      }
+    } catch (err) {
+      console.error('Quick like error:', err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // Messenger Simulated Audio/Video Call Handlers
+  const startCall = (type, targetName) => {
+    playMessengerSound();
+    setActiveCall({
+      type: type || 'audio',
+      targetName: targetName || 'কল',
+      status: 'ringing',
+      duration: 0,
+      isMuted: false,
+      isVideoOff: false
+    });
+    // Auto simulate answer in 2.5 seconds
+    setTimeout(() => {
+      setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : null));
+    }, 2500);
+  };
+
+  const endCall = () => {
+    setActiveCall(null);
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+  };
+
+  const toggleMuteCall = () => {
+    setActiveCall((prev) => (prev ? { ...prev, isMuted: !prev.isMuted } : null));
+  };
+
+  const toggleVideoCall = () => {
+    setActiveCall((prev) => (prev ? { ...prev, isVideoOff: !prev.isVideoOff } : null));
+  };
+
+  // Call Duration Timer
+  useEffect(() => {
+    if (activeCall && activeCall.status === 'connected') {
+      callTimerRef.current = setInterval(() => {
+        setActiveCall((prev) => (prev ? { ...prev, duration: prev.duration + 1 } : null));
+      }, 1000);
+    } else if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    return () => {
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+      }
+    };
+  }, [activeCall?.status]);
+
   const handleSaveUsername = () => {
     if (tempUsername.trim()) {
       setUsername(tempUsername.trim());
@@ -1294,6 +1474,8 @@ export default function Home() {
       name: newGroupName.trim(),
       desc: newGroupDesc.trim() || 'ম্যাসেঞ্জার কাস্টম গ্রুপ',
       emoji: newGroupEmoji || '💬',
+      customAvatarUrl: newGroupAvatarUrl || null,
+      avatarUrl: newGroupAvatarUrl || null,
       createdBy: username,
       members: initialMembers,
       createdAt: new Date().toISOString()
@@ -1306,9 +1488,64 @@ export default function Home() {
     setNewGroupName('');
     setNewGroupDesc('');
     setNewGroupEmoji('💬');
+    setNewGroupAvatarUrl(null);
     setSelectedGroupMembers([]);
     setIsCreateGroupOpen(false);
     handleSelectRoom(newGroup.id);
+  };
+
+  // Group Management & Edit Open Handler
+  const handleOpenEditGroup = (group) => {
+    if (!group) return;
+    const target = customGroups.find((g) => g.id === group.id) || group;
+    setEditingGroupId(target.id);
+    setEditGroupName(target.name || '');
+    setEditGroupDesc(target.desc || '');
+    setEditGroupEmoji(target.emoji || '💬');
+    setEditGroupAvatarUrl(target.customAvatarUrl || target.avatarUrl || null);
+    setEditGroupTab('info');
+    setMemberSearchQuery('');
+    setIsEditGroupModalOpen(true);
+  };
+
+  // Save Group Settings (Rename, Description, Avatar)
+  const handleSaveGroupSettings = (groupId) => {
+    if (!editGroupName.trim()) return;
+    const updated = customGroups.map((g) => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          name: editGroupName.trim(),
+          desc: editGroupDesc.trim(),
+          emoji: editGroupEmoji || '💬',
+          customAvatarUrl: editGroupAvatarUrl || null,
+          avatarUrl: editGroupAvatarUrl || null,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return g;
+    });
+    setCustomGroups(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_custom_groups', JSON.stringify(updated));
+    }
+    setIsEditGroupModalOpen(false);
+  };
+
+  // Group Avatar Upload Handler
+  const handleGroupAvatarUpload = async (e, isEdit = true) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const resized = await resizeImage(file, 300, 300, 0.85);
+      if (isEdit) {
+        setEditGroupAvatarUrl(resized);
+      } else {
+        setNewGroupAvatarUrl(resized);
+      }
+    } catch (err) {
+      console.error('Group avatar upload error:', err);
+    }
   };
 
   // Member toggle handler for custom groups
@@ -1330,9 +1567,42 @@ export default function Home() {
     }
   };
 
+  // Leave Custom Group Handler
+  const handleLeaveGroup = (groupId) => {
+    if (!confirm('আপনি কি নিশ্চিত যে এই গ্রুপটি ত্যাগ করতে চান?')) return;
+    const targetGroup = customGroups.find((g) => g.id === groupId);
+    if (!targetGroup) return;
+    const currentMembers = targetGroup.members || [targetGroup.createdBy || username];
+    const remainingMembers = currentMembers.filter((m) => m !== username);
+    
+    if (remainingMembers.length === 0) {
+      handleDeleteCustomGroup(groupId);
+    } else {
+      const nextCreator = targetGroup.createdBy === username ? remainingMembers[0] : targetGroup.createdBy;
+      const updated = customGroups.map((g) => {
+        if (g.id === groupId) {
+          return {
+            ...g,
+            members: remainingMembers,
+            createdBy: nextCreator
+          };
+        }
+        return g;
+      });
+      setCustomGroups(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rg_custom_groups', JSON.stringify(updated));
+      }
+      if (activeRoom === groupId) {
+        handleSelectRoom('general');
+      }
+    }
+    setIsEditGroupModalOpen(false);
+  };
+
   // Group Delete Handler
   const handleDeleteCustomGroup = (groupId, e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     const updated = customGroups.filter(g => g.id !== groupId);
     setCustomGroups(updated);
     if (typeof window !== 'undefined') {
@@ -1341,6 +1611,7 @@ export default function Home() {
     if (activeRoom === groupId) {
       handleSelectRoom('general');
     }
+    setIsEditGroupModalOpen(false);
   };
 
   // Message Pin Toggle Handler
@@ -1432,7 +1703,11 @@ export default function Home() {
       desc: g.desc,
       isCustom: true,
       emoji: g.emoji || '💬',
-      createdBy: g.createdBy
+      customAvatarUrl: g.customAvatarUrl || g.avatarUrl || null,
+      avatarUrl: g.avatarUrl || g.customAvatarUrl || null,
+      createdBy: g.createdBy,
+      members: g.members || [g.createdBy || username],
+      createdAt: g.createdAt
     })),
     ...directMessages.map(dm => ({
       id: dm.id,
@@ -1648,14 +1923,14 @@ export default function Home() {
             <Search className={`w-3.5 h-3.5 absolute left-3 top-2.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
             <input
               type="text"
-              placeholder="সদস্য বা বন্ধুদের খুঁজুন..."
+              placeholder="মেসেঞ্জারে বন্ধু বা গ্রুপ খুঁজুন..."
               value={userSearchQuery}
               onChange={(e) => {
                 setUserSearchQuery(e.target.value);
                 if (!isUserSearchOpen) setIsUserSearchOpen(true);
               }}
               onFocus={() => setIsUserSearchOpen(true)}
-              className={`w-full text-xs pl-8 pr-7 py-2 rounded-xl border focus:outline-none transition ${
+              className={`w-full text-xs pl-8 pr-7 py-2 rounded-full border focus:outline-none transition ${
                 isDarkMode
                   ? 'bg-slate-900 border-slate-700/80 text-white placeholder-slate-500 focus:border-blue-500'
                   : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-blue-500 shadow-sm'
@@ -1677,7 +1952,7 @@ export default function Home() {
 
           {/* Search Results Dropdown Panel */}
           {isUserSearchOpen && (
-            <div className={`mt-2 p-2.5 rounded-xl border shadow-2xl max-h-64 overflow-y-auto space-y-1.5 animate-in fade-in duration-150 relative z-30 ${
+            <div className={`mt-2 p-2.5 rounded-2xl border shadow-2xl max-h-64 overflow-y-auto space-y-1.5 animate-in fade-in duration-150 relative z-30 ${
               isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200 shadow-lg'
             }`}>
               <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/60 px-1">
@@ -1700,13 +1975,13 @@ export default function Home() {
                 filteredUsers.map((usr) => (
                   <div
                     key={usr.email || usr.id || usr.name}
-                    className={`flex items-center justify-between p-2 rounded-lg border transition ${
+                    className={`flex items-center justify-between p-2 rounded-xl border transition ${
                       isDarkMode
                         ? 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-800/80'
                         : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate min-w-0">
+                    <div className="flex items-center gap-2.5 truncate min-w-0">
                       <span className="text-base flex-shrink-0">{usr.avatar_emoji || '🧑‍💻'}</span>
                       <div className="truncate">
                         <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
@@ -1718,11 +1993,11 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => handleStartDirectMessage(usr)}
-                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-bold px-2.5 py-1 rounded-lg transition active:scale-95 shadow-sm shrink-0 flex items-center gap-1"
+                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-bold px-2.5 py-1 rounded-full transition active:scale-95 shadow-sm shrink-0 flex items-center gap-1"
                       title={`${usr.name} কে মেসেজ পাঠান`}
                     >
                       <MessageSquare className="w-3 h-3" />
-                      মেসেজ
+                      চ্যাট
                     </button>
                   </div>
                 ))
@@ -1731,245 +2006,325 @@ export default function Home() {
           )}
         </div>
 
-        {/* Channels List */}
-        <div className="p-4 flex-1 overflow-y-auto space-y-4">
-          <div>
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-2 mb-2 flex items-center justify-between">
-              <span>চ্যাট চ্যানেলসমূহ</span>
-              <span className="text-[10px] font-mono">{CHANNELS.length} টি</span>
-            </h4>
-            <div className="space-y-1">
-              {CHANNELS.map((channel) => {
-                const isActive = activeRoom === channel.id;
-                const isForbidden = (channel.minRole === 'admin' && !isAdmin) || (channel.minRole === 'moderator' && !isModerator);
-                return (
-                  <button
-                    key={channel.id}
-                    onClick={() => handleSelectRoom(channel.id)}
-                    className={`w-full text-left flex items-start gap-3 p-2.5 rounded-xl transition duration-150 relative group ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/10'
-                        : isForbidden
-                        ? 'text-slate-500 bg-slate-950/50 hover:bg-slate-900/80 border border-slate-800/60'
-                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="relative mt-0.5">
-                      <Hash className={`w-5 h-5 ${isActive ? 'text-white' : isForbidden ? 'text-slate-600' : 'text-slate-500'}`} />
-                      {isForbidden && (
-                        <Shield className="w-3 h-3 text-amber-500 absolute -bottom-1 -right-1 bg-slate-950 rounded-full p-0.5" />
+        {/* Messenger Active Now Stories / Horizontal Contacts Bar */}
+        <div className={`px-3 py-2.5 border-b ${isDarkMode ? 'border-slate-800/80 bg-slate-900/30' : 'border-slate-200 bg-slate-100/50'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              অ্যাক্টিভ নাও ({onlineCount})
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsOnlineListOpen(true)}
+              className="text-[10px] text-blue-400 hover:underline font-medium"
+            >
+              সবাই
+            </button>
+          </div>
+          <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none select-none">
+            {onlineUsersList.map((usr) => {
+              const uAvUrl = usr.customAvatarUrl || (usr.username === username ? customAvatarUrl : null);
+              const uAv = PRESET_AVATARS.find(a => a.id === usr.avatarId) || getAvatarForUsername(usr.username);
+              const isCurrent = usr.username === username;
+              return (
+                <button
+                  key={usr.username}
+                  type="button"
+                  onClick={() => {
+                    if (!isCurrent) {
+                      handleStartDirectMessage({ name: usr.username, role: 'সদস্য', avatar_emoji: uAv.emoji });
+                    }
+                  }}
+                  className="flex flex-col items-center gap-1 flex-shrink-0 group focus:outline-none"
+                  title={isCurrent ? 'আপনি অনলাইনে আছেন' : `${usr.username} এর সাথে চ্যাট শুরু করুন`}
+                >
+                  <div className="relative">
+                    <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-emerald-500 via-blue-500 to-indigo-500 transition-transform group-hover:scale-105">
+                      {uAvUrl ? (
+                        <img src={uAvUrl} alt={usr.username} className="w-full h-full rounded-full object-cover border-2 border-slate-950" />
+                      ) : (
+                        <div className={`w-full h-full rounded-full bg-gradient-to-tr ${uAv.bg} text-sm flex items-center justify-center border-2 border-slate-950 shadow-inner`}>
+                          {uAv.emoji}
+                        </div>
                       )}
                     </div>
-                    <div className="truncate flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <p className="text-sm font-semibold truncate">{channel.name}</p>
-                        {channel.minRole === 'admin' && (
-                          <span className="text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded-full shrink-0">
-                            অ্যাডমিন
-                          </span>
-                        )}
-                        {channel.minRole === 'moderator' && (
-                          <span className="text-[9px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 rounded-full shrink-0">
-                            মডারেটর+
-                          </span>
-                        )}
-                      </div>
-                      <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
-                        {channel.desc}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm" />
+                  </div>
+                  <span className="text-[10px] font-medium text-slate-300 max-w-[50px] truncate leading-tight group-hover:text-blue-400">
+                    {isCurrent ? 'আপনি' : usr.username}
+                  </span>
+                </button>
+              );
+            })}
           </div>
+        </div>
 
-          {/* Custom Messenger Groups Section */}
-          <div className="pt-2 border-t border-slate-800/80">
-            <div className="flex items-center justify-between px-2 mb-2">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-blue-400" />
-                <span>কাস্টম মেসেঞ্জার গ্রুপ</span>
-              </h4>
-              <button
-                type="button"
-                onClick={() => setIsCreateGroupOpen(true)}
-                className="text-[11px] bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white px-2 py-1 rounded-lg border border-blue-500/30 font-semibold flex items-center gap-1 transition active:scale-95 shadow-sm"
-                title="নতুন মেসেঞ্জার গ্রুপ তৈরি করুন"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>গ্রুপ তৈরি</span>
-              </button>
+        {/* Messenger Category Tabs */}
+        <div className="px-3 pt-2.5 pb-1 flex items-center gap-1 bg-slate-950 border-b border-slate-800/80">
+          {[
+            { id: 'all', label: 'সব চ্যাট', count: CHANNELS.length + customGroups.length + directMessages.length },
+            { id: 'dms', label: 'ডাইরেক্ট', count: directMessages.length },
+            { id: 'groups', label: 'গ্রুপ ও চ্যানেল', count: CHANNELS.length + customGroups.length }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSidebarTab(tab.id)}
+              className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 select-none ${
+                sidebarTab === tab.id
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${sidebarTab === tab.id ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Conversations Feed */}
+        <div className="p-3 flex-1 overflow-y-auto space-y-4">
+          
+          {/* Direct Messages Section */}
+          {(sidebarTab === 'all' || sidebarTab === 'dms') && (
+            <div>
+              <div className="flex items-center justify-between px-2 mb-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+                  <span>ডাইরেক্ট মেসেজ (DMs)</span>
+                </h4>
+                {directMessages.length > 0 && (
+                  <span className="text-[10px] font-mono text-slate-500">{directMessages.length} টি</span>
+                )}
+              </div>
+
+              {directMessages.length === 0 ? (
+                sidebarTab === 'dms' && (
+                  <div className="p-4 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl text-center space-y-2">
+                    <p className="text-xs text-slate-400">কোনো ডাইরেক্ট চ্যাট নেই</p>
+                    <p className="text-[11px] text-slate-500">উপরে সার্চ বারে নাম লিখে বন্ধুদের মেসেজ পাঠান</p>
+                  </div>
+                )
+              ) : (
+                <div className="space-y-1.5">
+                  {directMessages.map((dm) => {
+                    const isActive = activeRoom === dm.id;
+                    const isTargetOnline = !!onlineUsers[dm.targetName];
+                    return (
+                      <div
+                        key={dm.id}
+                        onClick={() => handleSelectRoom(dm.id)}
+                        className={`w-full text-left flex items-center justify-between gap-2.5 p-2.5 rounded-2xl transition duration-150 cursor-pointer group/dm ${
+                          isActive
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                            : isDarkMode
+                            ? 'text-slate-300 hover:bg-slate-900/90 hover:text-white'
+                            : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 truncate min-w-0">
+                          <div className="relative flex-shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-base shadow-sm">
+                              {dm.avatarEmoji || '👤'}
+                            </div>
+                            {isTargetOnline && (
+                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
+                            )}
+                          </div>
+                          <div className="truncate">
+                            <p className="text-xs font-bold truncate flex items-center gap-1.5">
+                              <span>{dm.targetName}</span>
+                              {isTargetOnline && (
+                                <span className={`text-[9px] font-normal px-1 rounded ${isActive ? 'bg-white/20 text-white' : 'text-emerald-400'}`}>Active</span>
+                              )}
+                            </p>
+                            <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {dm.targetRole || 'ব্যক্তিগত মেসেঞ্জার চ্যাট'}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteDM(dm.id, e)}
+                          className="opacity-0 group-hover/dm:opacity-100 text-slate-400 hover:text-rose-400 p-1.5 rounded-lg transition"
+                          title="চ্যাট রিমুভ করুন"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
+          )}
 
-            {customGroups.length === 0 ? (
-              <div className="p-3 bg-slate-900/40 border border-dashed border-slate-800 rounded-xl text-center space-y-1.5">
-                <p className="text-[11px] text-slate-400">কোনো কাস্টম মেসেঞ্জার গ্রুপ নেই</p>
+          {/* Custom Groups Section */}
+          {(sidebarTab === 'all' || sidebarTab === 'groups') && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <div className="flex items-center justify-between px-2 mb-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>মেসেঞ্জার গ্রুপ ({customGroups.length})</span>
+                </h4>
                 <button
                   type="button"
                   onClick={() => setIsCreateGroupOpen(true)}
-                  className="text-xs text-blue-400 hover:text-blue-300 font-bold underline inline-flex items-center gap-1"
+                  className="text-[11px] bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white px-2 py-1 rounded-xl border border-blue-500/30 font-semibold flex items-center gap-1 transition active:scale-95 shadow-sm"
+                  title="নতুন মেসেঞ্জার গ্রুপ তৈরি করুন"
                 >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                  নতুন গ্রুপ তৈরি করুন
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>গ্রুপ তৈরি</span>
                 </button>
               </div>
-            ) : (
-              <div className="space-y-1">
-                {customGroups.map((group) => {
-                  const isActive = activeRoom === group.id;
-                  return (
-                    <div
-                      key={group.id}
-                      onClick={() => handleSelectRoom(group.id)}
-                      className={`w-full text-left flex items-center justify-between gap-2 p-2.5 rounded-xl transition duration-150 cursor-pointer group/grp ${
-                        isActive
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                          : 'text-slate-300 hover:bg-slate-900 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2.5 truncate min-w-0">
-                        <span className="text-base flex-shrink-0 mt-0.5">{group.emoji || '💬'}</span>
-                        <div className="truncate">
-                          <p className="text-sm font-semibold truncate">{group.name}</p>
-                          <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
-                            {group.desc}
-                          </p>
+
+              {customGroups.length === 0 ? (
+                <div className="p-3 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl text-center space-y-1.5">
+                  <p className="text-[11px] text-slate-400">কোনো কাস্টম মেসেঞ্জার গ্রুপ নেই</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateGroupOpen(true)}
+                    className="text-xs text-blue-400 hover:text-blue-300 font-bold underline inline-flex items-center gap-1"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    নতুন গ্রুপ তৈরি করুন
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {customGroups.map((group) => {
+                    const isActive = activeRoom === group.id;
+                    const memberCount = (group.members || [group.createdBy || username]).length;
+                    const groupAvatar = group.customAvatarUrl || group.avatarUrl;
+                    return (
+                      <div
+                        key={group.id}
+                        onClick={() => handleSelectRoom(group.id)}
+                        className={`w-full text-left flex items-center justify-between gap-2.5 p-2.5 rounded-2xl transition duration-150 cursor-pointer group/grp ${
+                          isActive
+                            ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-600/20'
+                            : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 truncate min-w-0">
+                          {groupAvatar ? (
+                            <img
+                              src={groupAvatar}
+                              alt={group.name}
+                              className="w-10 h-10 rounded-2xl object-cover border border-indigo-500/30 flex-shrink-0 shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-2xl bg-indigo-950/80 border border-indigo-500/30 flex items-center justify-center text-lg flex-shrink-0 shadow-sm">
+                              {group.emoji || '💬'}
+                            </div>
+                          )}
+                          <div className="truncate">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold truncate">{group.name}</p>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-indigo-300'}`}>
+                                {memberCount} জন
+                              </span>
+                            </div>
+                            <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
+                              {group.desc}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Group Actions: Edit & Delete */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover/grp:opacity-100 transition flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditGroup(group);
+                            }}
+                            className="text-slate-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-slate-950/60 transition"
+                            title="গ্রুপ সম্পাদনা, এভারটার ও মেম্বার সেটিংস"
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteCustomGroup(group.id, e)}
+                            className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-950/60 transition"
+                            title="গ্রুপ ডিলিট করুন"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
-                      
-                      {/* Delete group button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteCustomGroup(group.id, e)}
-                        className="opacity-0 group-hover/grp:opacity-100 text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-950/60 transition flex-shrink-0"
-                        title="গ্রুপ রিমুভ করুন"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Direct Messages Section */}
-          {directMessages.length > 0 && (
+          {/* Public Channels List */}
+          {(sidebarTab === 'all' || sidebarTab === 'groups') && (
             <div className="pt-2 border-t border-slate-800/80">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2 mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>ডাইরেক্ট মেসেজ (DMs)</span>
-                </span>
-                <span className="text-[10px] font-mono">{directMessages.length} টি</span>
+                <span>পাবলিক চ্যানেলসমূহ</span>
+                <span className="text-[10px] font-mono text-slate-500">{CHANNELS.length} টি</span>
               </h4>
               <div className="space-y-1">
-                {directMessages.map((dm) => {
-                  const isActive = activeRoom === dm.id;
+                {CHANNELS.map((channel) => {
+                  const isActive = activeRoom === channel.id;
+                  const isForbidden = (channel.minRole === 'admin' && !isAdmin) || (channel.minRole === 'moderator' && !isModerator);
                   return (
-                    <div
-                      key={dm.id}
-                      onClick={() => handleSelectRoom(dm.id)}
-                      className={`w-full text-left flex items-center justify-between gap-2 p-2 rounded-xl transition duration-150 cursor-pointer group/dm ${
+                    <button
+                      key={channel.id}
+                      onClick={() => handleSelectRoom(channel.id)}
+                      className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-2xl transition duration-150 relative group ${
                         isActive
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                          : isDarkMode
-                          ? 'text-slate-300 hover:bg-slate-900 hover:text-white'
-                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/15'
+                          : isForbidden
+                          ? 'text-slate-500 bg-slate-950/50 hover:bg-slate-900/80 border border-slate-800/60'
+                          : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate min-w-0">
-                        <span className="text-base flex-shrink-0">{dm.avatarEmoji || '👤'}</span>
-                        <div className="truncate">
-                          <p className="text-xs font-bold truncate">{dm.targetName}</p>
-                          <p className={`text-[10px] truncate ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
-                            {dm.targetRole || 'ব্যক্তিগত চ্যাট'}
-                          </p>
-                        </div>
+                      <div className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center relative flex-shrink-0">
+                        <Hash className={`w-4 h-4 ${isActive ? 'text-white' : isForbidden ? 'text-slate-600' : 'text-slate-400'}`} />
+                        {isForbidden && (
+                          <Shield className="w-3 h-3 text-amber-500 absolute -bottom-1 -right-1 bg-slate-950 rounded-full p-0.5" />
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteDM(dm.id, e)}
-                        className="opacity-0 group-hover/dm:opacity-100 text-slate-400 hover:text-rose-400 p-1 rounded transition"
-                        title="চ্যাট রিমুভ করুন"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                      <div className="truncate flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-xs font-bold truncate">{channel.name}</p>
+                          {channel.minRole === 'admin' && (
+                            <span className="text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded-full shrink-0">
+                              অ্যাডমিন
+                            </span>
+                          )}
+                          {channel.minRole === 'moderator' && (
+                            <span className="text-[9px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 rounded-full shrink-0">
+                              মডারেটর+
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                          {channel.desc}
+                        </p>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
             </div>
           )}
 
-          {/* Online Active Members Sidebar Section */}
-          <div className="pt-2 border-t border-slate-800/80">
-            <div className="flex items-center justify-between px-2 mb-2">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span>অনলাইনে আছেন ({onlineCount})</span>
-              </h4>
-              <button
-                type="button"
-                onClick={() => setIsOnlineListOpen(true)}
-                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline"
-              >
-                তালিকা দেখুন
-              </button>
-            </div>
-
-            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-              {onlineUsersList.map((usr) => {
-                const uAvUrl = usr.customAvatarUrl || (usr.username === username ? customAvatarUrl : null);
-                const uAv = PRESET_AVATARS.find(a => a.id === usr.avatarId) || getAvatarForUsername(usr.username);
-                const isCurrent = usr.username === username;
-                const roomObj = CHANNELS.find(r => r.id === usr.room) || (customGroups || []).find(g => g.id === usr.room);
-                return (
-                  <div
-                    key={usr.username}
-                    className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs hover:bg-slate-800/60 transition"
-                  >
-                    <div className="flex items-center gap-2 truncate min-w-0">
-                      <div className="relative flex-shrink-0">
-                        {uAvUrl ? (
-                          <img src={uAvUrl} alt={usr.username} className="w-6 h-6 rounded-full object-cover shadow-sm border border-slate-700/50" />
-                        ) : (
-                          <div className={`w-6 h-6 rounded-full bg-gradient-to-tr ${uAv.bg} text-xs flex items-center justify-center select-none shadow-sm`}>
-                            {uAv.emoji}
-                          </div>
-                        )}
-                        <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
-                      </div>
-                      <div className="truncate min-w-0">
-                        <p className="font-semibold text-slate-200 truncate leading-snug">
-                          {usr.username} {isCurrent && <span className="text-[10px] text-emerald-400 font-normal">(আপনি)</span>}
-                        </p>
-                        <p className="text-[10px] text-slate-500 truncate">
-                          {roomObj ? roomObj.name : 'সাধারণ চ্যাট'}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.2 rounded-full font-medium">
-                      সক্রিয়
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Guidelines / Help box */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 space-y-2">
-            <h5 className="font-bold text-slate-300 flex items-center gap-1.5">
+          {/* Quick Realtime Messenger Tip */}
+          <div className="bg-gradient-to-br from-blue-950/40 to-slate-900/60 border border-blue-900/30 rounded-2xl p-3 text-xs text-slate-400 space-y-1.5">
+            <h5 className="font-bold text-blue-300 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-              গুরুত্বপূর্ণ টিপস
+              রিয়েল-টাইম মেসেঞ্জার
             </h5>
-            <p className="leading-relaxed">
-              আপনি একই সাথে অন্য একটি ব্রাউজার ট্যাব বা উইন্ডো খুলে এই চ্যাট পেইজটিতে প্রবেশ করুন। সেখানে অন্য নাম দিয়ে বার্তা লিখে পাঠান—দেখবেন রিয়েল-টাইমে মেসেজ আদান-প্রদান ও অনলাইন স্ট্যাটাস আপডেট হচ্ছে!
+            <p className="leading-relaxed text-[11px]">
+              আরেকটি ট্যাব খুলে চ্যাট করুন—তাৎক্ষণিক মেসেজ, সাউন্ড ও অনলাইন উপস্থিতি লাইভ দেখতে পাবেন!
             </p>
           </div>
         </div>
@@ -1977,109 +2332,189 @@ export default function Home() {
 
       {/* Right Chat Area */}
       <div className={`flex-1 flex flex-col h-full overflow-hidden relative min-w-0 transition-colors duration-200 ${isDarkMode ? 'bg-slate-900/40' : 'bg-slate-50'}`}>
-        {/* Chat Room Header */}
-        <div className={`px-4 md:px-6 py-3.5 border-b flex items-center justify-between flex-shrink-0 z-10 transition-colors duration-200 ${isDarkMode ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white shadow-sm'}`}>
-          <div className="flex items-center gap-2.5">
-            {currentRoomObj.isCustom ? (
-              <span className="text-xl flex-shrink-0">{currentRoomObj.emoji || '💬'}</span>
-            ) : (
-              <Hash className="w-5 h-5 text-blue-500" />
-            )}
-            <div>
-              <h3 className={`text-base font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                <span>{currentRoomObj.name}</span>
-                {currentRoomObj.isCustom && (
-                  <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-normal">
-                    {currentRoomObj.isDM ? 'ডাইরেক্ট মেসেজ' : 'কাস্টম গ্রুপ'}
-                  </span>
-                )}
-              </h3>
-              <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {currentRoomObj.desc}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Add/Manage Group Members Button for Custom Groups */}
-            {currentRoomObj.isCustom && !currentRoomObj.isDM && (
-              <button
-                type="button"
-                onClick={() => setIsManageMembersModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-                title="গ্রুপে সদস্য যোগ বা রিমুভ করুন"
+        {/* Modern Facebook Messenger Style Chat Header */}
+        <div className={`px-4 md:px-6 py-3 border-b flex items-center justify-between flex-shrink-0 z-10 transition-colors duration-200 ${isDarkMode ? 'border-slate-800 bg-slate-900/95 backdrop-blur-md' : 'border-slate-200 bg-white shadow-sm'}`}>
+          
+          {/* Header Left: Avatar & Meta */}
+          <div className="flex items-center gap-3 min-w-0">
+            {currentRoomObj.isDM ? (
+              /* 1-on-1 Personal Messenger Header */
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="relative flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-lg shadow-sm">
+                    {currentRoomObj.avatarEmoji || '👤'}
+                  </div>
+                  {onlineUsers[currentRoomObj.targetName] ? (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-slate-900 shadow-sm" />
+                  ) : (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 ring-2 ring-slate-900" />
+                  )}
+                </div>
+                <div className="truncate">
+                  <h3 className={`text-sm md:text-base font-bold truncate flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    <span>{currentRoomObj.targetName || currentRoomObj.name}</span>
+                    <span className="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2 py-0.2 rounded-full font-normal hidden sm:inline">
+                      {currentRoomObj.targetRole || 'সদস্য'}
+                    </span>
+                  </h3>
+                  <p className="text-xs flex items-center gap-1.5 truncate mt-0.5">
+                    {onlineUsers[currentRoomObj.targetName] ? (
+                      <span className="text-emerald-400 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Active now (অনলাইনে আছেন)
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">অফলাইন</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            ) : currentRoomObj.isCustom ? (
+              /* Custom Group Messenger Header */
+              <div
+                onClick={() => handleOpenEditGroup(currentRoomObj)}
+                className="flex items-center gap-3 min-w-0 cursor-pointer group/hdr hover:opacity-95 transition"
+                title="গ্রুপের তথ্য, নাম ও এভারটার পরিবর্তন করতে ক্লিক করুন"
               >
-                <UserPlus className="w-3.5 h-3.5 text-blue-400" />
-                <span className="hidden sm:inline">সদস্য এড করুন</span>
-                <span className="text-[10px] bg-blue-500/20 px-1.5 py-0.2 rounded-full font-mono">
-                  {(currentRoomObj.members || [currentRoomObj.createdBy || username]).length} জন
-                </span>
-              </button>
+                {currentRoomObj.customAvatarUrl || currentRoomObj.avatarUrl ? (
+                  <img
+                    src={currentRoomObj.customAvatarUrl || currentRoomObj.avatarUrl}
+                    alt={currentRoomObj.name}
+                    className="w-10 h-10 rounded-2xl object-cover border border-indigo-500/40 flex-shrink-0 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-950/80 border border-indigo-500/30 flex items-center justify-center text-xl flex-shrink-0 shadow-sm">
+                    {currentRoomObj.emoji || '💬'}
+                  </div>
+                )}
+                <div className="truncate">
+                  <h3 className={`text-sm md:text-base font-bold truncate flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    <span className="group-hover/hdr:text-indigo-400 transition">{currentRoomObj.name}</span>
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.2 rounded-full font-normal hidden sm:inline">
+                      মেসেঞ্জার গ্রুপ
+                    </span>
+                    <Edit3 className="w-3 h-3 text-slate-500 group-hover/hdr:text-indigo-400 transition opacity-0 group-hover/hdr:opacity-100 hidden sm:inline" />
+                  </h3>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">
+                    {(currentRoomObj.members || [currentRoomObj.createdBy || username]).length} জন সদস্য • {onlineCount} জন অনলাইনে
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* Public Channel Header */
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
+                  <Hash className="w-5 h-5 text-blue-400" />
+                </div>
+                <div className="truncate">
+                  <h3 className={`text-sm md:text-base font-bold truncate flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    <span>{currentRoomObj.name}</span>
+                  </h3>
+                  <p className={`text-xs truncate mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {currentRoomObj.desc}
+                  </p>
+                </div>
+              </div>
             )}
+          </div>
 
-            {/* Theme Toggle Button */}
+          {/* Header Right: Call Actions & Controls */}
+          <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+            {/* Audio Call Button */}
             <button
               type="button"
-              onClick={handleToggleTheme}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
-                isDarkMode
-                  ? 'bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-              }`}
-              title={isDarkMode ? 'লাইট মোড এ পরিবর্তন করুন' : 'ডার্ক মোড এ পরিবর্তন করুন'}
+              onClick={() => startCall('audio', currentRoomObj.targetName || currentRoomObj.name)}
+              className="p-2 md:px-3 md:py-2 bg-blue-600/15 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 rounded-full border border-blue-500/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-sm"
+              title="অডিও কল করুন"
             >
-              {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
-              <span className="hidden sm:inline">{isDarkMode ? 'লাইট মোড' : 'ডার্ক মোড'}</span>
+              <Phone className="w-4 h-4" />
+              <span className="hidden lg:inline">অডিও কল</span>
             </button>
+
+            {/* Video Call Button */}
+            <button
+              type="button"
+              onClick={() => startCall('video', currentRoomObj.targetName || currentRoomObj.name)}
+              className="p-2 md:px-3 md:py-2 bg-indigo-600/15 hover:bg-indigo-600/30 text-indigo-400 hover:text-indigo-300 rounded-full border border-indigo-500/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-sm"
+              title="ভিডিও কল করুন"
+            >
+              <Video className="w-4 h-4" />
+              <span className="hidden lg:inline">ভিডিও কল</span>
+            </button>
+
+            {/* Group Settings & Member Management Button for Custom Groups */}
+            {currentRoomObj.isCustom && !currentRoomObj.isDM && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditGroup(currentRoomObj)}
+                  className="flex items-center gap-1.5 px-2.5 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-full text-xs font-bold transition shadow-sm cursor-pointer"
+                  title="গ্রুপের নাম, এভারটার ও তথ্য সম্পাদনা করুন"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="hidden sm:inline">গ্রুপ সেটিংস</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleOpenEditGroup(currentRoomObj);
+                    setEditGroupTab('members');
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 hover:text-white border border-blue-500/30 rounded-full text-xs font-bold transition shadow-sm cursor-pointer"
+                  title="গ্রুপে সদস্য যোগ বা রিমুভ করুন"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="hidden sm:inline">সদস্য</span>
+                  <span className="text-[10px] bg-blue-500/20 px-1.5 py-0.2 rounded-full font-mono">
+                    {(currentRoomObj.members || [currentRoomObj.createdBy || username]).length}
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* Info Details Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsInfoDrawerOpen(!isInfoDrawerOpen)}
+              className={`p-2 rounded-full border text-xs font-bold transition shadow-sm cursor-pointer ${
+                isInfoDrawerOpen
+                  ? 'bg-blue-600 text-white border-blue-500 shadow-md'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60'
+              }`}
+              title="চ্যাট বিস্তারিত ও তথ্য দেখুন"
+            >
+              <Info className="w-4 h-4" />
+            </button>
+
             {/* Task Alert & Alarm Button */}
             <button
               type="button"
               onClick={() => setIsTaskAlertModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer relative"
+              className="flex items-center gap-1.5 p-2 md:px-2.5 md:py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 hover:text-white border border-rose-500/30 rounded-full text-xs font-bold transition shadow-sm cursor-pointer relative"
               title="টাস্ক অ্যালার্ট ও নির্ধারিত সময়ে সাউন্ড অ্যালার্ম সেট করুন"
             >
-              <Bell className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-              <span className="hidden sm:inline">টাস্ক অ্যালার্ট</span>
+              <Bell className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden xl:inline">টাস্ক অ্যালার্ট</span>
               {taskAlerts.filter(a => !a.isTriggered).length > 0 && (
                 <span className="bg-rose-500 text-white font-mono text-[9px] px-1.5 py-0.2 rounded-full font-bold">
                   {taskAlerts.filter(a => !a.isTriggered).length}
                 </span>
               )}
             </button>
+
+            {/* Theme Toggle Button */}
             <button
               type="button"
-              onClick={async () => {
-                await requestNotificationPermission();
-                playMessengerSound();
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-              title="মেসেঞ্জার সাউন্ড ও নোটিফিকেশন টেস্ট করুন"
+              onClick={handleToggleTheme}
+              className={`p-2 border rounded-full text-xs font-bold transition shadow-sm cursor-pointer ${
+                isDarkMode
+                  ? 'bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+              }`}
+              title={isDarkMode ? 'লাইট মোড এ পরিবর্তন করুন' : 'ডার্ক মোড এ পরিবর্তন করুন'}
             >
-              <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">সাউন্ড টেস্ট</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsSqlModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-bold transition shadow-sm"
-              title="ডাটাবেস সেটিংস ও SQL ফিক্স গাইড"
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">SQL সেটিংস</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsOnlineListOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer group/onl"
-              title="অনলাইন সদস্যদের তালিকা দেখুন"
-            >
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-              </span>
-              <span className="font-mono text-emerald-300 group-hover/onl:text-emerald-200">
-                {onlineCount} জন অনলাইনে
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-emerald-400 transition-transform group-hover/onl:translate-y-0.5" />
+              {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
             </button>
           </div>
         </div>
@@ -2194,22 +2629,24 @@ export default function Home() {
               let messageAudio = null;
               let messageAudioDuration = null;
               
-              if (msg.content && msg.content.startsWith('{"text":')) {
+              if (msg.content && typeof msg.content === 'string' && msg.content.trim().startsWith('{')) {
                 try {
                   const parsed = JSON.parse(msg.content);
-                  contentText = parsed.text;
-                  replyInfo = parsed.replyTo;
-                  isReply = !!replyInfo;
-                  isEdited = !!parsed.edited;
-                  isPinned = !!parsed.pinned;
-                  isTaskAlert = !!parsed.isTaskAlert;
-                  messageAvatarId = parsed.avatar;
-                  messageImage = parsed.image;
-                  messageCustomAvatarUrl = parsed.customAvatarUrl;
-                  messageAudio = parsed.audio;
-                  messageAudioDuration = parsed.audioDuration;
+                  if (parsed && typeof parsed === 'object') {
+                    contentText = parsed.text !== undefined ? parsed.text : msg.content;
+                    replyInfo = parsed.replyTo;
+                    isReply = !!replyInfo;
+                    isEdited = !!parsed.edited;
+                    isPinned = !!parsed.pinned;
+                    isTaskAlert = !!parsed.isTaskAlert;
+                    messageAvatarId = parsed.avatar;
+                    messageImage = parsed.image;
+                    messageCustomAvatarUrl = parsed.customAvatarUrl;
+                    messageAudio = parsed.audio;
+                    messageAudioDuration = parsed.audioDuration;
+                  }
                 } catch (e) {
-                  // Fallback
+                  // Fallback to plain text
                 }
               }
 
@@ -2325,43 +2762,20 @@ export default function Home() {
                         )}
 
                         {messageImage && (
-                          <div className="mt-2 max-w-[280px] sm:max-w-xs overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/20 cursor-zoom-in group/img shadow-md">
-                            <img 
-                              src={messageImage} 
-                              alt="ছবি" 
-                              onClick={() => setLightboxImage(messageImage)}
-                              className="max-h-56 w-full object-cover rounded-xl group-hover/img:scale-[1.02] transition duration-200"
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
+                          <ImageMessageBubble 
+                            imageUrl={messageImage}
+                            isMe={isMe}
+                            onOpenLightbox={(url) => setLightboxImage(url)}
+                          />
                         )}
 
                         {messageAudio && (
-                          <div className={`mt-2 p-2.5 rounded-xl border flex flex-col gap-1.5 max-w-[280px] sm:max-w-xs shadow-md ${
-                            isMe
-                              ? 'bg-blue-700/60 border-blue-400/40 text-white'
-                              : isDarkMode
-                              ? 'bg-slate-900/90 border-slate-700/70 text-slate-200'
-                              : 'bg-slate-100 border-slate-300 text-slate-800'
-                          }`}>
-                            <div className="flex items-center justify-between text-xs font-bold gap-2">
-                              <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider opacity-90">
-                                <Mic className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-                                <span>ভয়েস মেসেজ</span>
-                              </span>
-                              {messageAudioDuration > 0 && (
-                                <span className="text-[10px] font-mono opacity-80 px-1.5 py-0.5 rounded bg-black/20">
-                                  {formatRecordingTime(messageAudioDuration)}
-                                </span>
-                              )}
-                            </div>
-                            <audio 
-                              src={messageAudio} 
-                              controls 
-                              controlsList="nodownload" 
-                              className="w-full h-8 rounded-lg outline-none"
-                            />
-                          </div>
+                          <VoiceMessageBubble 
+                            audioSrc={messageAudio}
+                            duration={messageAudioDuration}
+                            isMe={isMe}
+                            isDarkMode={isDarkMode}
+                          />
                         )}
 
                         {/* Web Preview Card */}
@@ -2750,7 +3164,8 @@ export default function Home() {
                 type="text"
                 value={inputText}
                 onChange={handleInputChange}
-                placeholder={editingMessage ? "বার্তাটি সম্পাদন করুন..." : "আপনার বার্তা এখানে লিখুন..."}
+                onPaste={handlePasteImage}
+                placeholder={editingMessage ? "বার্তাটি সম্পাদন করুন..." : "আপনার বার্তা লিখুন বা ছবি পেস্ট করুন..."}
                 className={`flex-1 border text-sm px-4 py-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all duration-200 ${
                   isDarkMode
                     ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600 focus:border-blue-500'
@@ -2759,17 +3174,374 @@ export default function Home() {
               />
             )}
 
-            <button
-              type="submit"
-              disabled={isSending || (!inputText.trim() && !selectedImage && !recordedAudioUrl)}
-              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white font-bold p-3.5 rounded-xl shadow-lg shadow-blue-500/10 active:scale-95 transition-all duration-150 flex items-center justify-center flex-shrink-0"
-              title="বার্তা পাঠান"
-            >
-              {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-            </button>
+            {/* Quick Like 👍 or Send Button */}
+            {!inputText.trim() && !selectedImage && !recordedAudioUrl && !editingMessage ? (
+              <button
+                type="button"
+                onClick={handleSendQuickLike}
+                disabled={isSending}
+                className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 font-bold p-3.5 rounded-xl active:scale-90 transition-all duration-150 flex items-center justify-center flex-shrink-0 shadow-sm cursor-pointer"
+                title="কুইক লাইক (👍) পাঠান"
+              >
+                <ThumbsUp className="w-4 h-4 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSending || (!inputText.trim() && !selectedImage && !recordedAudioUrl)}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white font-bold p-3.5 rounded-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all duration-150 flex items-center justify-center flex-shrink-0"
+                title="বার্তা পাঠান"
+              >
+                {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+              </button>
+            )}
           </div>
         </form>
       </div>
+
+      {/* Messenger Right Info Drawer / Details Sidebar */}
+      {isInfoDrawerOpen && (
+        <div className={`w-full lg:w-72 border-t lg:border-t-0 lg:border-l flex flex-col flex-shrink-0 h-auto lg:h-full overflow-y-auto z-20 animate-in slide-in-from-right duration-200 ${
+          isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-200' : 'border-slate-200 bg-white text-slate-800'
+        }`}>
+          {/* Drawer Header */}
+          <div className="p-4 border-b border-slate-800/80 flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-400" />
+              <span>চ্যাট বিবরণ ও সেটিংস</span>
+            </span>
+            <button
+              onClick={() => setIsInfoDrawerOpen(false)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="বন্ধ করুন"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Contact / Group Info Card */}
+          <div className="p-5 text-center border-b border-slate-800/60 flex flex-col items-center">
+            {currentRoomObj.isDM ? (
+              <div className="relative mb-3">
+                <div className="w-16 h-16 rounded-full bg-slate-800 border-2 border-blue-500/50 flex items-center justify-center text-2xl shadow-md">
+                  {currentRoomObj.avatarEmoji || '👤'}
+                </div>
+                {onlineUsers[currentRoomObj.targetName] && (
+                  <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-slate-900 shadow-sm" />
+                )}
+              </div>
+            ) : currentRoomObj.isCustom ? (
+              <div className="relative mb-3">
+                {currentRoomObj.customAvatarUrl || currentRoomObj.avatarUrl ? (
+                  <img
+                    src={currentRoomObj.customAvatarUrl || currentRoomObj.avatarUrl}
+                    alt={currentRoomObj.name}
+                    className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-500/40 shadow-md"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-2xl bg-indigo-950/80 border-2 border-indigo-500/40 flex items-center justify-center text-3xl shadow-md">
+                    {currentRoomObj.emoji || '💬'}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditGroup(currentRoomObj)}
+                  className="absolute -bottom-1 -right-1 p-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow border border-slate-900 transition"
+                  title="এভারটার পরিবর্তন করুন"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border-2 border-blue-500/40 flex items-center justify-center mb-3">
+                <Hash className="w-8 h-8 text-blue-400" />
+              </div>
+            )}
+
+            <h4 className="text-sm font-extrabold text-white truncate max-w-full flex items-center gap-1.5 justify-center">
+              <span>{currentRoomObj.targetName || currentRoomObj.name}</span>
+              {currentRoomObj.isCustom && !currentRoomObj.isDM && (
+                <button
+                  onClick={() => handleOpenEditGroup(currentRoomObj)}
+                  className="text-slate-400 hover:text-indigo-300 p-0.5"
+                  title="গ্রুপ সম্পাদনা"
+                >
+                  <Edit3 className="w-3 h-3" />
+                </button>
+              )}
+            </h4>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {currentRoomObj.isDM
+                ? (onlineUsers[currentRoomObj.targetName] ? '🟢 Active Now' : '⚪ Offline')
+                : currentRoomObj.isCustom
+                ? `${(currentRoomObj.members || []).length || 1} জন সদস্য`
+                : 'পাবলিক কমিউনিটি চ্যানেল'}
+            </p>
+            {currentRoomObj.isCustom && !currentRoomObj.isDM && (
+              <span className="text-[10px] text-indigo-300/80 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full mt-1.5 flex items-center gap-1">
+                <Crown className="w-3 h-3 text-amber-400" />
+                ক্রিয়েটর: {currentRoomObj.createdBy || 'অ্যাডমিন'}
+              </span>
+            )}
+
+            {/* Action Buttons inside Drawer */}
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => startCall('audio', currentRoomObj.targetName || currentRoomObj.name)}
+                className="p-2.5 rounded-full bg-blue-600/15 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 transition active:scale-95"
+                title="অডিও কল"
+              >
+                <Phone className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => startCall('video', currentRoomObj.targetName || currentRoomObj.name)}
+                className="p-2.5 rounded-full bg-indigo-600/15 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 transition active:scale-95"
+                title="ভিডিও কল"
+              >
+                <Video className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleSendQuickLike}
+                className="p-2.5 rounded-full bg-slate-800 text-blue-400 hover:bg-slate-700 hover:text-blue-300 border border-slate-700 transition active:scale-95"
+                title="লাইক পাঠান"
+              >
+                <ThumbsUp className="w-4 h-4 fill-current" />
+              </button>
+            </div>
+          </div>
+
+          {/* Drawer Menu Sections */}
+          <div className="p-4 space-y-4 text-xs">
+            {/* Custom Group Management Controls Section */}
+            {currentRoomObj.isCustom && !currentRoomObj.isDM && (
+              <div className="space-y-2.5 pb-3 border-b border-slate-800">
+                <h5 className="font-bold text-indigo-300 flex items-center justify-between">
+                  <span>গ্রুপ অপশন ও নিয়ন্ত্রণ</span>
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                </h5>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditGroup(currentRoomObj)}
+                  className="w-full text-left p-2.5 rounded-xl bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-500/30 flex items-center justify-between text-indigo-200 transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-indigo-400" />
+                    <span>নাম, বিবরণ ও এভারটার এডিট</span>
+                  </div>
+                  <span className="text-[10px] text-indigo-400 font-bold">এডিট &rarr;</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleOpenEditGroup(currentRoomObj);
+                    setEditGroupTab('members');
+                  }}
+                  className="w-full text-left p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800 flex items-center justify-between text-slate-300 transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-blue-400" />
+                    <span>সদস্য ব্যবস্থাপনা ({currentRoomObj.members?.length || 1})</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full font-mono font-bold">+ যোগ</span>
+                </button>
+
+                {/* Inline Group Members Preview */}
+                <div className="bg-slate-900/40 rounded-xl p-2 border border-slate-800/80 space-y-1.5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">গ্রুপের সদস্যবৃন্দ</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                    {(currentRoomObj.members || [currentRoomObj.createdBy || username]).map((memName) => {
+                      const isCreator = memName === currentRoomObj.createdBy;
+                      const isSelf = memName === username;
+                      return (
+                        <div key={memName} className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/50 text-[11px]">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="font-medium text-slate-200 truncate">
+                              {memName} {isSelf && '(আপনি)'}
+                            </span>
+                          </div>
+                          {isCreator && (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shrink-0">
+                              <Crown className="w-2.5 h-2.5" /> অ্যাডমিন
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleLeaveGroup(currentRoomObj.id)}
+                    className="flex-1 py-2 px-2.5 rounded-xl bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 font-bold text-[11px] transition flex items-center justify-center gap-1"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    গ্রুপ ত্যাগ
+                  </button>
+                  {currentRoomObj.createdBy === username && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCustomGroup(currentRoomObj.id)}
+                      className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700/60 text-[11px] transition flex items-center justify-center gap-1"
+                      title="গ্রুপ ডিলিট করুন"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Shared Media Section */}
+            <div className="space-y-2">
+              <h5 className="font-bold text-slate-400 flex items-center justify-between">
+                <span>শেয়ার করা মিডিয়া ও ফাইল</span>
+                <span className="text-[10px] font-mono text-slate-500">
+                  {messages.filter(m => m.content && m.content.includes('"image":')).length} টি ছবি
+                </span>
+              </h5>
+              <div className="grid grid-cols-3 gap-1.5">
+                {messages
+                  .filter(m => m.content && m.content.includes('"image":'))
+                  .slice(0, 6)
+                  .map((m, idx) => {
+                    let imgUrl = '';
+                    try { imgUrl = JSON.parse(m.content).image; } catch(e) {}
+                    if (!imgUrl) return null;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => setLightboxImage(imgUrl)}
+                        className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-900 cursor-pointer hover:opacity-80 transition"
+                      >
+                        <img src={imgUrl} alt="Media" className="w-full h-full object-cover" />
+                      </div>
+                    );
+                  })}
+              </div>
+              {messages.filter(m => m.content && m.content.includes('"image":')).length === 0 && (
+                <p className="text-[11px] text-slate-500 italic">এখনো কোনো ছবি শেয়ার করা হয়নি</p>
+              )}
+            </div>
+
+            {/* Pinned Messages Count */}
+            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Pin className="w-4 h-4 text-amber-400" />
+                <span className="font-medium text-slate-300">পিন করা বার্তা</span>
+              </div>
+              <span className="font-bold text-amber-400 font-mono text-xs">
+                {pinnedMessages.length} টি
+              </span>
+            </div>
+
+            {/* Privacy & Notification Settings */}
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <h5 className="font-bold text-slate-400">প্রাইভেসি ও সহায়তা</h5>
+              <button
+                type="button"
+                onClick={async () => {
+                  await requestNotificationPermission();
+                  playMessengerSound();
+                }}
+                className="w-full text-left p-2.5 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 flex items-center justify-between text-slate-300 transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-indigo-400" />
+                  <span>নোটিফিকেশন সাউন্ড</span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-bold">চালু</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulated Audio/Video Call Active Screen Overlay */}
+      {activeCall && (
+        <div className="fixed inset-0 z-[150] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-6 animate-in fade-in zoom-in-95 duration-200 text-white">
+          {/* Call Header */}
+          <div className="text-center pt-8 space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-xs font-mono text-blue-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>{activeCall.type === 'video' ? 'ভিডিও কল' : 'অডিও কল'} • {activeCall.status === 'connected' ? 'সংযুক্ত' : 'রিং হচ্ছে...'}</span>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-2">{activeCall.target}</h2>
+            <p className="text-sm font-mono text-slate-400">
+              {formatRecordingTime(callDuration)}
+            </p>
+          </div>
+
+          {/* Call Center Avatar / Video Box */}
+          <div className="my-auto flex flex-col items-center justify-center">
+            {activeCall.type === 'video' && activeCall.isVideoOn ? (
+              <div className="w-72 h-72 md:w-96 md:h-96 rounded-3xl bg-slate-900 border-2 border-indigo-500/50 shadow-2xl flex items-center justify-center relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-tr from-blue-950/60 to-indigo-950/60 flex flex-col items-center justify-center p-4 text-center">
+                  <div className="w-24 h-24 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-4xl mb-4 shadow-lg animate-pulse">
+                    👤
+                  </div>
+                  <span className="text-xs font-bold text-indigo-300 bg-indigo-900/50 px-3 py-1 rounded-full border border-indigo-500/30">
+                    এইচডি লাইভ ক্যামেরা সিমুলেশন
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-6xl shadow-2xl border-4 border-slate-800 animate-pulse">
+                  👤
+                </div>
+                <div className="absolute -inset-4 rounded-full border-2 border-blue-500/30 animate-ping pointer-events-none" />
+              </div>
+            )}
+          </div>
+
+          {/* Call Controls Bar */}
+          <div className="flex items-center gap-4 pb-8">
+            <button
+              type="button"
+              onClick={toggleMuteCall}
+              className={`p-4 rounded-full border text-lg transition active:scale-90 ${
+                activeCall.isMuted
+                  ? 'bg-rose-600/30 border-rose-500 text-rose-300'
+                  : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-white'
+              }`}
+              title={activeCall.isMuted ? 'আনমিউট করুন' : 'মিউট করুন'}
+            >
+              <Mic className="w-6 h-6" />
+            </button>
+
+            {activeCall.type === 'video' && (
+              <button
+                type="button"
+                onClick={toggleVideoCall}
+                className={`p-4 rounded-full border text-lg transition active:scale-90 ${
+                  !activeCall.isVideoOn
+                    ? 'bg-rose-600/30 border-rose-500 text-rose-300'
+                    : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-white'
+                }`}
+                title={activeCall.isVideoOn ? 'ক্যামেরা বন্ধ করুন' : 'ক্যামেরা চালু করুন'}
+              >
+                <Video className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* End Call Red Button */}
+            <button
+              type="button"
+              onClick={endCall}
+              className="p-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/40 active:scale-90 transition border border-rose-400"
+              title="কল কেটে দিন"
+            >
+              <Phone className="w-6 h-6 rotate-[135deg]" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox Modal */}
       {lightboxImage && (
@@ -2882,7 +3654,7 @@ export default function Home() {
       {/* Create Custom Messenger Group Modal */}
       {isCreateGroupOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl relative animate-in zoom-in-95 duration-150">
             <button
               onClick={() => setIsCreateGroupOpen(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
@@ -2916,20 +3688,68 @@ export default function Home() {
                 />
               </div>
 
+              {/* Group Avatar Selection & Photo Upload */}
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  গ্রুপ ইমোজি/আইকন
+                  গ্রুপের ছবি / এভারটার
                 </label>
-                <div className="flex items-center gap-2">
-                  {['💬', '🚀', '🔥', '🎮', '⚽', '💡', '🎉', '❤️'].map((emoji) => (
+                <div className="flex items-center gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                  {newGroupAvatarUrl ? (
+                    <div className="relative">
+                      <img
+                        src={newGroupAvatarUrl}
+                        alt="Group Avatar"
+                        className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-500 shadow-md"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNewGroupAvatarUrl(null)}
+                        className="absolute -top-1.5 -right-1.5 p-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full text-xs shadow"
+                        title="ছবি মুছুন"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-950 border-2 border-indigo-500/40 flex items-center justify-center text-2xl shadow-inner shrink-0">
+                      {newGroupEmoji || '💬'}
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5 flex-1">
+                    <input
+                      type="file"
+                      ref={createGroupAvatarFileInputRef}
+                      onChange={(e) => handleGroupAvatarUpload(e, false)}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => createGroupAvatarFileInputRef.current?.click()}
+                      className="w-full py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>কাস্টম ছবি আপলোড করুন</span>
+                    </button>
+                    <p className="text-[10px] text-slate-500">অথবা নিচে থেকে একটি ইমোজি ব্যাজ সিলেক্ট করুন</p>
+                  </div>
+                </div>
+
+                {/* Emoji presets grid */}
+                <div className="grid grid-cols-8 gap-1.5 mt-2 max-h-24 overflow-y-auto p-1 bg-slate-950 rounded-xl border border-slate-800">
+                  {GROUP_PRESET_EMOJIS.map((emoji) => (
                     <button
                       key={emoji}
                       type="button"
-                      onClick={() => setNewGroupEmoji(emoji)}
-                      className={`text-xl p-2 rounded-xl border transition ${
-                        newGroupEmoji === emoji
-                          ? 'bg-blue-600/30 border-blue-500 scale-110'
-                          : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                      onClick={() => {
+                        setNewGroupEmoji(emoji);
+                        setNewGroupAvatarUrl(null);
+                      }}
+                      className={`text-lg p-1.5 rounded-lg border transition ${
+                        !newGroupAvatarUrl && newGroupEmoji === emoji
+                          ? 'bg-blue-600/30 border-blue-500 scale-105 shadow'
+                          : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                       }`}
                     >
                       {emoji}
@@ -2959,7 +3779,7 @@ export default function Home() {
                     {selectedGroupMembers.length} জন নির্বাচিত
                   </span>
                 </label>
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 max-h-40 overflow-y-auto space-y-1">
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 max-h-36 overflow-y-auto space-y-1">
                   {registeredUsersList.filter(u => u.name !== username).length === 0 ? (
                     <p className="text-[11px] text-slate-500 text-center py-2">অন্য কোনো নিবন্ধিত সদস্য পাওয়া যায়নি</p>
                   ) : (
@@ -3020,6 +3840,322 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Comprehensive Group Management & Edit Settings Modal */}
+      {isEditGroupModalOpen && editingGroupId && (
+        <div className="fixed inset-0 z-[115] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl relative animate-in zoom-in-95 duration-150 overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>গ্রুপ সেটিংস ও ব্যবস্থাপনা</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">নাম, বিবরণ, এভারটার এবং মেম্বার নিয়ন্ত্রণ করুন</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditGroupModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+                type="button"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="flex border-b border-slate-800 bg-slate-950/50 px-5 pt-2 gap-2 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setEditGroupTab('info')}
+                className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 ${
+                  editGroupTab === 'info'
+                    ? 'border-indigo-500 text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>নাম, বিবরণ ও এভারটার</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditGroupTab('members')}
+                className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 ${
+                  editGroupTab === 'members'
+                    ? 'border-indigo-500 text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>সদস্য তালিকা ও অনুমতি</span>
+                <span className="text-[10px] bg-indigo-500/20 px-1.5 py-0.2 rounded-full font-mono">
+                  {((customGroups.find(g => g.id === editingGroupId)?.members) || [username]).length}
+                </span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              {editGroupTab === 'info' ? (
+                /* Tab 1: Info, Renaming & Avatar */
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                      গ্রুপের নাম <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editGroupName}
+                      onChange={(e) => setEditGroupName(e.target.value)}
+                      placeholder="গ্রুপের নতুন নাম লিখুন..."
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 text-white text-sm px-3.5 py-2.5 rounded-xl focus:outline-none transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                      গ্রুপের বিবরণ
+                    </label>
+                    <input
+                      type="text"
+                      value={editGroupDesc}
+                      onChange={(e) => setEditGroupDesc(e.target.value)}
+                      placeholder="গ্রুপের বিবরণ বা উদ্দেশ্য..."
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 text-white text-sm px-3.5 py-2.5 rounded-xl focus:outline-none transition"
+                    />
+                  </div>
+
+                  {/* Avatar Upload & Emoji Badges */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                      গ্রুপ এভারটার / ছবি পরিবর্তন
+                    </label>
+                    <div className="flex items-center gap-3.5 p-3.5 bg-slate-950 rounded-xl border border-slate-800">
+                      {editGroupAvatarUrl ? (
+                        <div className="relative">
+                          <img
+                            src={editGroupAvatarUrl}
+                            alt="Group Avatar"
+                            className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-500 shadow-md"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditGroupAvatarUrl(null)}
+                            className="absolute -top-1.5 -right-1.5 p-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full text-xs shadow"
+                            title="ছবি মুছুন এবং ইমোজি ব্যবহার করুন"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-indigo-950 border-2 border-indigo-500/40 flex items-center justify-center text-3xl shadow-inner shrink-0">
+                          {editGroupEmoji || '💬'}
+                        </div>
+                      )}
+
+                      <div className="space-y-2 flex-1">
+                        <input
+                          type="file"
+                          ref={groupAvatarFileInputRef}
+                          onChange={(e) => handleGroupAvatarUpload(e, true)}
+                          accept="image/*"
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => groupAvatarFileInputRef.current?.click()}
+                          className="w-full py-2 px-3 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 border border-indigo-500/30"
+                        >
+                          <Camera className="w-4 h-4 text-indigo-400" />
+                          <span>নতুন ছবি আপলোড করুন</span>
+                        </button>
+                        {editGroupAvatarUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setEditGroupAvatarUrl(null)}
+                            className="w-full text-center text-[11px] text-rose-400 hover:underline"
+                          >
+                            ছবি মুছে ইমোজি আইকন ব্যবহার করুন
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Preset Emoji Badges Selector */}
+                    <div className="mt-3">
+                      <p className="text-[11px] font-bold text-slate-400 mb-1.5">অথবা ইমোজি আইকন পছন্দ করুন:</p>
+                      <div className="grid grid-cols-8 gap-1.5 max-h-28 overflow-y-auto p-1.5 bg-slate-950 rounded-xl border border-slate-800">
+                        {GROUP_PRESET_EMOJIS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => {
+                              setEditGroupEmoji(emoji);
+                              setEditGroupAvatarUrl(null);
+                            }}
+                            className={`text-lg p-2 rounded-xl border transition ${
+                              !editGroupAvatarUrl && editGroupEmoji === emoji
+                                ? 'bg-indigo-600/30 border-indigo-500 scale-110 shadow'
+                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Tab 2: Members Management */
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="সদস্য সার্চ করুন (নাম বা রোল)..."
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 text-white text-xs pl-8 pr-8 py-2.5 rounded-xl focus:border-indigo-500 focus:outline-none transition"
+                    />
+                    {memberSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setMemberSearchQuery('')}
+                        className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                    {registeredUsersList
+                      .filter((usr) => {
+                        if (!memberSearchQuery.trim()) return true;
+                        const q = memberSearchQuery.toLowerCase();
+                        return (usr.name || '').toLowerCase().includes(q) || (usr.role || '').toLowerCase().includes(q);
+                      })
+                      .map((usr) => {
+                        const targetGroup = customGroups.find(g => g.id === editingGroupId);
+                        const currentMembers = targetGroup?.members || [targetGroup?.createdBy || username];
+                        const isMember = currentMembers.includes(usr.name);
+                        const isCreator = usr.name === targetGroup?.createdBy;
+
+                        return (
+                          <div
+                            key={usr.name}
+                            className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                              isMember
+                                ? 'bg-indigo-950/30 border-indigo-800/60'
+                                : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-800/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 truncate min-w-0">
+                              <span className="text-lg shrink-0">{usr.avatar_emoji || '🧑‍💻'}</span>
+                              <div className="truncate">
+                                <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                                  <span>{usr.name}</span>
+                                  {isCreator && (
+                                    <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded-full font-semibold flex items-center gap-0.5">
+                                      <Crown className="w-2.5 h-2.5" /> ক্রিয়েটর
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">{usr.role || 'সদস্য'}</p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleMemberInGroup(editingGroupId, usr.name)}
+                              disabled={isCreator}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition active:scale-95 shrink-0 flex items-center gap-1 ${
+                                isMember
+                                  ? 'bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border-rose-500/30'
+                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-600/20'
+                              } ${isCreator ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                              {isMember ? (
+                                <>
+                                  <UserMinus className="w-3.5 h-3.5" />
+                                  <span>রিমুভ</span>
+                                </>
+                              ) : (
+                                <>
+                                  <UserPlus className="w-3.5 h-3.5" />
+                                  <span>যুক্ত করুন</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Danger Zone: Leave or Delete Group */}
+                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => handleLeaveGroup(editingGroupId)}
+                      className="text-xs font-bold text-rose-400 hover:text-rose-300 flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-rose-500/10 transition"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>গ্রুপ থেকে বের হয়ে যান</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('আপনি কি নিশ্চিত যে এই গ্রুপটি সম্পূর্ণ মুছে ফেলতে চান?')) {
+                          handleDeleteCustomGroup(editingGroupId);
+                        }
+                      }}
+                      className="text-xs font-bold text-slate-500 hover:text-rose-400 flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-800 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>গ্রুপ ডিলিট</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                {editGroupTab === 'info' ? 'পরিবর্তন সংরক্ষণ করতে সেভ বাটনে চাপুন' : 'সদস্য তালিকা তাৎক্ষণিক কার্যকর হয়'}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditGroupModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition"
+                >
+                  বন্ধ করুন
+                </button>
+                {editGroupTab === 'info' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSaveGroupSettings(editingGroupId)}
+                    disabled={!editGroupName.trim()}
+                    className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/25 transition flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>সংরক্ষণ করুন</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -3510,6 +4646,48 @@ export default function Home() {
                 ঠিক আছে (বন্ধ করুন)
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Screen Lightbox Image Modal */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setLightboxImage(null)}
+        >
+          {/* Top Controls Bar */}
+          <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-3 z-10" onClick={(e) => e.stopPropagation()}>
+            <a
+              href={lightboxImage}
+              download={`chat-image-${Date.now()}.jpg`}
+              className="p-2.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/60 transition active:scale-95 shadow-lg flex items-center gap-1.5 text-xs font-bold"
+              title="ছবি ডাউনলোড করুন"
+            >
+              <Download className="w-4 h-4 text-cyan-400" />
+              <span className="hidden sm:inline">ডাউনলোড</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="p-2.5 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white border border-slate-700/60 transition active:scale-95 shadow-lg"
+              title="বন্ধ করুন"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Centered Image */}
+          <div 
+            className="max-w-4xl max-h-[85vh] p-2 flex items-center justify-center relative select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage}
+              alt="বড় ছবি"
+              className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
+              referrerPolicy="no-referrer"
+            />
           </div>
         </div>
       )}

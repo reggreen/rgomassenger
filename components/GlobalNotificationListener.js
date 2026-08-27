@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Bell, Mail, X, CheckSquare, MessageSquare, Volume2, Sparkles, VolumeX } from 'lucide-react';
 import Link from 'next/link';
-import { playMessengerSound, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
+import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
 
 export default function GlobalNotificationListener() {
   const [activeAlerts, setActiveAlerts] = useState([]);
@@ -27,7 +27,28 @@ export default function GlobalNotificationListener() {
       checkPendingTasks();
     }, 10000);
 
-    // 2. Realtime Messages Listener for instant sound & notifications
+    // 2. Listen to Background Service Worker Alarm triggers
+    const handleSWAlarmEvent = (e) => {
+      const alarm = e.detail;
+      if (!alarm) return;
+      
+      // Play 10s alarm ringtone immediately
+      playTaskAlarmRingtone(10000);
+
+      setActiveAlerts((prev) => {
+        if (prev.some((a) => String(a.id) === String(alarm.id))) {
+          return prev;
+        }
+        return [alarm, ...prev];
+      });
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('rg_task_alarm_fired', handleSWAlarmEvent);
+      window.addEventListener('rg_task_alarm_received', handleSWAlarmEvent);
+    }
+
+    // 3. Realtime Messages Listener for instant sound & notifications
     let currentUsername = '';
     if (typeof window !== 'undefined') {
       currentUsername = localStorage.getItem('rg_username') || '';
@@ -71,6 +92,10 @@ export default function GlobalNotificationListener() {
     return () => {
       clearInterval(taskInterval);
       messageChannel.unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('rg_task_alarm_fired', handleSWAlarmEvent);
+        window.removeEventListener('rg_task_alarm_received', handleSWAlarmEvent);
+      }
     };
   }, []);
 

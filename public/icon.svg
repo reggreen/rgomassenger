@@ -1,11 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4f46e5" />
-      <stop offset="50%" stop-color="#2563eb" />
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="45%" stop-color="#4f46e5" />
       <stop offset="100%" stop-color="#06b6d4" />
     </linearGradient>
+    <linearGradient id="bubbleGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f1f5f9" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.3" />
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="128" fill="url(#grad)" />
-  <path d="M256 96C158.8 96 80 167.6 80 256c0 50.2 25.6 94.8 65.6 124.2V416c0 8.8 7.2 16 16 16h45.2c15.8 4.6 32.5 7.2 49.2 7.2 97.2 0 176-71.6 176-160S353.2 96 256 96zm38.6 202.6l-46.6-49.8-91 49.8 100-106.2 47.4 49.8 90.2-49.8-100 106.2z" fill="#ffffff" />
+
+  <!-- Base Rounded Background -->
+  <rect width="512" height="512" rx="120" fill="url(#bgGrad)" />
+
+  <!-- Subtle Inner Ring Highlight -->
+  <rect x="6" y="6" width="500" height="500" rx="114" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.25" />
+
+  <!-- Center Messenger Chat Icon -->
+  <g filter="url(#shadow)" transform="translate(256, 256) scale(0.9) translate(-256, -256)">
+    <!-- Messenger Chat Bubble Shape -->
+    <path d="M256 80 C145.5 80 56 160.6 56 260 C56 316.6 85.8 366.5 132.4 398.8 C137 402 140 407.2 139.8 412.8 L137.2 449.6 C136.2 463.6 150.8 473.4 163 466.8 L213.6 439.4 C218.2 436.9 223.6 436.2 228.8 437.2 C237.7 439 246.8 440 256 440 C366.5 440 456 359.4 456 260 C456 160.6 366.5 80 256 80 Z" fill="url(#bubbleGrad)" />
+
+    <!-- Lightning Bolt Motif -->
+    <path d="M292 170 L176 300 L242 300 L220 350 L336 220 L270 220 Z" fill="url(#bgGrad)" />
+  </g>
 </svg>

@@ -5,15 +5,48 @@ import HeadlineTicker from '../components/HeadlineTicker';
 import GlobalNotificationListener from '../components/GlobalNotificationListener';
 import AuthGuard from '../components/AuthGuard';
 import DashboardLayout from '../components/DashboardLayout';
+import { setupServiceWorkerAlarmListener, registerBackgroundSync } from '../utils/alarmScheduler';
+import { supabase } from '../lib/supabase';
 import '../styles/globals.css';
 
 function MyApp({ Component, pageProps }) {
   useEffect(() => {
+    // 1. Register Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('Service Worker registration failed:', err);
-      });
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => {
+          registerBackgroundSync();
+        })
+        .catch((err) => {
+          console.warn('Service Worker registration failed:', err);
+        });
     }
+
+    // 2. Setup SW alarm messages listener
+    const cleanupSWListener = setupServiceWorkerAlarmListener(
+      (alarm) => {
+        // Callback when an alarm is triggered from SW in background
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('rg_task_alarm_received', { detail: alarm }));
+        }
+      },
+      async (taskId) => {
+        // Callback when user clicked "Complete Task" from notification action
+        if (taskId) {
+          try {
+            await supabase.from('tasks').update({ status: 'Completed', alerted: true }).eq('id', taskId);
+            window.dispatchEvent(new Event('rg_tasks_updated'));
+          } catch (e) {
+            console.error('Error completing task from notification action:', e);
+          }
+        }
+      }
+    );
+
+    return () => {
+      cleanupSWListener();
+    };
   }, []);
 
   // Use custom page layout if defined, otherwise default to persistent DashboardLayout
