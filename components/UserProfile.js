@@ -525,6 +525,30 @@ export default function UserProfile({ onProfileUpdate }) {
             </div>
           </div>
 
+          {/* Role Status (Locked and Admin Controlled for Security) */}
+          <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400">অ্যাসাইন করা রোল (Role Permission)</label>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-xs font-extrabold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
+                  {formData.role || 'কমিউনিটি সদস্য'}
+                </span>
+                <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />
+                  ভেরিফাইড
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-500 font-medium block">
+                🔒 নিরাপত্তা নীতি অনুযায়ী রোল শুধুমাত্র
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium block">
+                সিস্টেম অ্যাডমিন দ্বারা পরিবর্তনযোগ্য
+              </span>
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-1">বায়ো / ভূমিকা (Bio)</label>
             <textarea

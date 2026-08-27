@@ -92,17 +92,18 @@ export default function DashboardLayout({ children }) {
 
   const navSections = [
     {
-      title: '🚀 কন্ট্রোল কেন্দ্র (Main)',
+      title: '⚡ মূল ফিচারসমূহ (Core Focus)',
       items: [
-        { name: 'ড্যাশবোর্ড', href: '/dashboard', icon: LayoutDashboard, badge: null },
-        { name: 'টাস্ক ও এলার্ট', href: '/tasks', icon: Bell, badge: counts.pendingTasks > 0 ? `${counts.pendingTasks}` : null, badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-        { name: 'ফোরাম ও ডিসকাশন', href: '/discussion', icon: MessageCircle, badge: null },
-        { name: 'লাইভ চ্যাট রুম', href: '/', icon: MessageSquare, badge: null },
+        { name: 'লাইভ মেসেঞ্জার (Messenger)', href: '/', icon: MessageSquare, badge: 'Live', badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+        { name: 'টাস্ক ও অ্যালার্ম অ্যালার্ট', href: '/tasks', icon: Bell, badge: counts.pendingTasks > 0 ? `${counts.pendingTasks}` : null, badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+        { name: 'ড্যাশবোর্ড ওভারভিউ', href: '/dashboard', icon: LayoutDashboard, badge: null },
+        { name: 'আমার প্রোফাইল', href: '/profile', icon: User, badge: null },
       ]
     },
     {
-      title: '🛠️ সার্ভিস ও সার্ভিসেস',
+      title: '🛠️ অন্যান্য অপশনাল মডিউল (Optional)',
       items: [
+        { name: 'ফোরাম ও ডিসকাশন', href: '/discussion', icon: MessageCircle, badge: null },
         { name: 'ইভেন্টস ক্যালেন্ডার', href: '/events', icon: Calendar, badge: null },
         { name: 'বিলিং ও ক্যাশ ফান্ড', href: '/billing', icon: CreditCard, badge: null },
         { name: 'হেল্পডেস্ক সাপোর্ট', href: '/support', icon: HelpCircle, badge: counts.openTickets > 0 ? `${counts.openTickets}` : null, badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },

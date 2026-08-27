@@ -58,17 +58,43 @@ export default function Navbar() {
               <span>লাইভ সিস্টেম</span>
             </div>
 
+            {/* Quick Messenger Link */}
+            <Link
+              href="/"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-200 ${
+                router.pathname === '/'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/50'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-blue-600 hover:text-white border border-slate-700/60'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+              <span>মেসেঞ্জার</span>
+            </Link>
+
+            {/* Quick Tasks Link */}
+            <Link
+              href="/tasks"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-200 ${
+                router.pathname === '/tasks'
+                  ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 ring-1 ring-rose-400/50'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-rose-600 hover:text-white border border-slate-700/60'
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden xs:inline">টাস্ক অ্যালার্ট</span>
+            </Link>
+
             {/* Quick Dashboard Link */}
             <Link
               href="/dashboard"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-200 ${
                 router.pathname === '/dashboard'
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/50'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-blue-600 hover:text-white border border-slate-700/60'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 ring-1 ring-indigo-400/50'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-indigo-600 hover:text-white border border-slate-700/60'
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">ড্যাশবোর্ড</span>
+              <span className="hidden md:inline">ড্যাশবোর্ড</span>
             </Link>
 
             {/* User Profile / Auth Button */}

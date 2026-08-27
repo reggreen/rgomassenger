@@ -53,27 +53,34 @@ export function AuthProvider({ children }) {
   const saveRegisteredUser = async (userObj) => {
     if (!userObj || !userObj.email) return;
     try {
+      // Security Enforcement: Only official owner email can be assigned default Admin
+      const isOwner = userObj.email.toLowerCase() === 'redgreenonline2023@gmail.com';
+      const safeRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (userObj.role || 'কমিউনিটি সদস্য');
+      const safeUserObj = { ...userObj, role: safeRole };
+
       if (typeof window !== 'undefined') {
         const stored = localStorage.getItem('rg_all_users');
         let users = stored ? JSON.parse(stored) : [DEFAULT_ADMIN_ACCOUNT];
         const existingIdx = users.findIndex(u => u.email.toLowerCase() === userObj.email.toLowerCase());
         if (existingIdx >= 0) {
-          users[existingIdx] = { ...users[existingIdx], ...userObj };
+          // Preserve existing verified role if any
+          const existingRole = users[existingIdx].role || safeRole;
+          users[existingIdx] = { ...users[existingIdx], ...safeUserObj, role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : existingRole };
         } else {
-          users.push(userObj);
+          users.push(safeUserObj);
         }
         localStorage.setItem('rg_all_users', JSON.stringify(users));
       }
 
       // Sync to Supabase profiles
       const { supabase } = await import('../lib/supabase');
-      await supabase.from('profiles').insert([{
+      await supabase.from('profiles').upsert([{
         id: userObj.id,
         name: userObj.name,
         email: userObj.email,
-        role: userObj.role || 'সদস্য',
+        role: safeRole,
         avatar_emoji: userObj.avatar_emoji || '🧑‍💻'
-      }]);
+      }], { onConflict: 'email' });
     } catch (err) {
       console.warn('Profile sync notice:', err);
     }
@@ -401,14 +408,23 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Update Profile Data
+  // Update Profile Data (Role is protected from self-elevation)
   const updateProfile = (updatedData) => {
     if (!user) return;
-    const newUserData = { ...user, ...updatedData };
+    const isOwner = (user.email || '').toLowerCase() === 'redgreenonline2023@gmail.com';
+    const isCurrentAdmin = (user.role || '').toLowerCase().includes('admin') || (user.role || '').toLowerCase().includes('অ্যাডমিন') || isOwner;
+    
+    // Non-admin users cannot arbitrarily modify their assigned role
+    const sanitizedData = { ...updatedData };
+    if (!isCurrentAdmin && sanitizedData.role) {
+      delete sanitizedData.role;
+    }
+
+    const newUserData = { ...user, ...sanitizedData };
     setUser(newUserData);
     localStorage.setItem('rg_current_user', JSON.stringify(newUserData));
-    if (updatedData.name) {
-      localStorage.setItem('rg_username', updatedData.name);
+    if (sanitizedData.name) {
+      localStorage.setItem('rg_username', sanitizedData.name);
     }
   };
 

@@ -1,6 +1,6 @@
 {
   "name": "Rgomassenger",
-  "description": "An interactive web app for billing, events, technical support, general discussion, and team updates.",
+  "description": "Real-time Messenger & Task Alert system featuring personal and group chatting, voice notes, audio/video call simulation, and scheduled sound alarms.",
   "requestFramePermissions": [
     "microphone"
   ],
