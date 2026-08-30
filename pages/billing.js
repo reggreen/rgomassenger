@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { CreditCard, CheckCircle, Clock, Plus, Search, DollarSign, TrendingUp, Sparkles, X, User, ArrowRight, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 
 export default function Billing() {

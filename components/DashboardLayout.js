@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,

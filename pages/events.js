@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { Calendar, MapPin, Users, Plus, X, Sparkles, Clock, ArrowRight, Edit3, Trash2, AlertTriangle, Bell, CheckSquare, Image as ImageIcon } from 'lucide-react';
 
 const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {

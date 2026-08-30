@@ -6,7 +6,7 @@ import GlobalNotificationListener from '../components/GlobalNotificationListener
 import AuthGuard from '../components/AuthGuard';
 import DashboardLayout from '../components/DashboardLayout';
 import { setupServiceWorkerAlarmListener, registerBackgroundSync } from '../utils/alarmScheduler';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import '../styles/globals.css';
 
 function MyApp({ Component, pageProps }) {

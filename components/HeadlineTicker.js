@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { Megaphone, Clock, ChevronLeft, ChevronRight, Sparkles, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Link from 'next/link';

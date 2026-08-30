@@ -2,6 +2,7 @@
   "name": "Rgomassenger",
   "description": "Real-time Messenger & Task Alert system featuring personal and group chatting, voice notes, audio/video call simulation, and scheduled sound alarms.",
   "requestFramePermissions": [
+    "camera",
     "microphone"
   ],
   "majorCapabilities": [

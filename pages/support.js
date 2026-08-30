@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { HelpCircle, AlertTriangle, CheckCircle, Plus, Search, User, Tag, Clock, X, Edit3, Trash2 } from 'lucide-react';
-import SupabaseBanner from '../components/SupabaseBanner';
+import AppwriteBanner from '../components/AppwriteBanner';
 
 const CATEGORIES = ['সব টিকিট', 'বিলিং ও পেমেন্ট', 'সার্ভার সমস্যা', 'ডিজাইন ও বাগ', 'অন্যান্য'];
 
@@ -187,9 +187,9 @@ export default function Support() {
 
   return (
       <div className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 bg-slate-900/10" id="support-container">
-      {/* Supabase Connection Status Banner */}
+      {/* Appwrite Connection Status Banner */}
       <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900/40">
-        <SupabaseBanner />
+        <AppwriteBanner />
       </div>
 
       {/* Top Welcome Board */}

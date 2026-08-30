@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { Bell, Mail, X, CheckSquare, MessageSquare, Volume2, Sparkles, VolumeX } from 'lucide-react';
 import Link from 'next/link';
 import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';

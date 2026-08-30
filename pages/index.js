@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { supabase, sendTypingStatus } from '../lib/supabase';
+import { appwrite as supabase, uploadVoiceRecording, sendTypingStatus, sendOnlinePresence, subscribeToPresence, subscribeToTyping, isAppwriteConfigured } from '../lib/appwrite';
 import { useAuth } from '../context/AuthContext';
 import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
 import { scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, syncAllAlarmsWithServiceWorker } from '../utils/alarmScheduler';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
 import ImageMessageBubble from '../components/ImageMessageBubble';
+import VideoCallModal from '../components/VideoCallModal';
 import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle, Phone, PhoneCall, PhoneOff, Video, VideoOff, Info, MoreHorizontal, ThumbsUp, MessageCircle, SlidersHorizontal, Share2, CornerDownRight, Download, ZoomIn, Settings, Crown, LogOut, UserMinus } from 'lucide-react';
 
 const GROUP_PRESET_EMOJIS = [
@@ -268,6 +269,8 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState(null);
+  const [recordedAudioBlob, setRecordedAudioBlob] = useState(null);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
@@ -369,8 +372,12 @@ export default function Home() {
   // Modern Messenger UI States: Tabs, Call Simulation, Info Drawer
   const [sidebarTab, setSidebarTab] = useState('all'); // 'all' | 'dms' | 'groups'
   const [isInfoDrawerOpen, setIsInfoDrawerOpen] = useState(false);
-  const [activeCall, setActiveCall] = useState(null); // { type: 'audio'|'video', targetName, status: 'ringing'|'connected', duration: 0, isMuted: false, isVideoOff: false }
-  const callTimerRef = useRef(null);
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
+  const [videoCallConfig, setVideoCallConfig] = useState({
+    type: 'video',
+    targetName: 'ব্যবহারকারী',
+    targetAvatar: null
+  });
 
   const handleCopySql = () => {
     if (typeof window !== 'undefined' && navigator.clipboard) {
@@ -608,6 +615,7 @@ export default function Home() {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        setRecordedAudioBlob(audioBlob);
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = () => {
@@ -649,6 +657,7 @@ export default function Home() {
     }
     setIsRecording(false);
     setRecordedAudioUrl(null);
+    setRecordedAudioBlob(null);
     setRecordingTime(0);
   };
 
@@ -1049,6 +1058,49 @@ export default function Home() {
     };
   }, [username, selectedAvatarId, activeRoom, customAvatarUrl]);
 
+  // Appwrite Real-time Presence & Typing Subscription Engine
+  useEffect(() => {
+    if (!username) return;
+
+    // 1. Subscribe to real-time Typing broadcasts across rooms
+    const unsubTyping = subscribeToTyping((payload) => {
+      if (payload && payload.sender && payload.sender !== username) {
+        if (payload.room === activeRoom) {
+          setTypingUsers((prev) => ({
+            ...prev,
+            [payload.sender]: !!payload.isTyping
+          }));
+        }
+      }
+    });
+
+    // 2. Subscribe to real-time Presence updates
+    const unsubPresence = subscribeToPresence((presenceStore) => {
+      if (presenceStore && typeof presenceStore === 'object') {
+        const mapped = {};
+        Object.entries(presenceStore).forEach(([usrKey, presList]) => {
+          if (Array.isArray(presList) && presList.length > 0) {
+            const p = presList[presList.length - 1];
+            mapped[usrKey] = {
+              username: usrKey,
+              avatarId: p.avatarId || getAvatarForUsername(usrKey).id,
+              customAvatarUrl: p.customAvatarUrl || null,
+              room: p.room || 'general',
+              status: p.status || 'online',
+              lastSeen: Date.now()
+            };
+          }
+        });
+        setOnlineUsers((prev) => ({ ...prev, ...mapped }));
+      }
+    });
+
+    return () => {
+      unsubTyping();
+      unsubPresence();
+    };
+  }, [username, activeRoom]);
+
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1212,6 +1264,25 @@ export default function Home() {
       let finalContent = '';
       const resolvedCustomAvatar = customAvatarUrl || user?.custom_avatar_url || (typeof window !== 'undefined' ? localStorage.getItem('rg_custom_avatar_url') : null);
 
+      let audioPayloadUrl = recordedAudioUrl;
+      // If we have a recorded audio blob, upload to Appwrite Storage
+      if (recordedAudioBlob) {
+        setIsUploadingVoice(true);
+        try {
+          const uploadResult = await uploadVoiceRecording(
+            recordedAudioBlob,
+            `voice_${Date.now()}_${username.replace(/[^a-zA-Z0-9]/g, '_')}.webm`
+          );
+          if (uploadResult?.url) {
+            audioPayloadUrl = uploadResult.url;
+          }
+        } catch (err) {
+          console.warn('Appwrite storage upload notice, using fallback audio URL:', err);
+        } finally {
+          setIsUploadingVoice(false);
+        }
+      }
+
       if (isReply) {
         let replyText = replyingToMessage.content;
         if (replyingToMessage.content.startsWith('{"text":')) {
@@ -1229,7 +1300,7 @@ export default function Home() {
           avatar: selectedAvatarId,
           customAvatarUrl: resolvedCustomAvatar,
           image: selectedImage,
-          audio: recordedAudioUrl,
+          audio: audioPayloadUrl,
           audioDuration: recordingTime
         });
       } else {
@@ -1238,7 +1309,7 @@ export default function Home() {
           avatar: selectedAvatarId,
           customAvatarUrl: resolvedCustomAvatar,
           image: selectedImage,
-          audio: recordedAudioUrl,
+          audio: audioPayloadUrl,
           audioDuration: recordingTime
         });
       }
@@ -1262,6 +1333,7 @@ export default function Home() {
       }
       setSelectedImage(null);
       setRecordedAudioUrl(null);
+      setRecordedAudioBlob(null);
       setRecordingTime(0);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -1345,55 +1417,21 @@ export default function Home() {
     }
   };
 
-  // Messenger Simulated Audio/Video Call Handlers
-  const startCall = (type, targetName) => {
+  // Messenger Audio/Video Call Handlers with MediaDevices Camera Preview
+  const startCall = (type = 'video', targetName, targetAvatar = null) => {
     playMessengerSound();
-    setActiveCall({
-      type: type || 'audio',
-      targetName: targetName || 'কল',
-      status: 'ringing',
-      duration: 0,
-      isMuted: false,
-      isVideoOff: false
+    const resolvedTarget = targetName || (currentRoomObj?.targetName || currentRoomObj?.name || 'ব্যবহারকারী');
+    let resolvedAvatar = targetAvatar;
+    if (!resolvedAvatar && currentRoomObj?.targetName) {
+      resolvedAvatar = profilesMap[currentRoomObj.targetName]?.custom_avatar_url || null;
+    }
+    setVideoCallConfig({
+      type: type || 'video',
+      targetName: resolvedTarget,
+      targetAvatar: resolvedAvatar
     });
-    // Auto simulate answer in 2.5 seconds
-    setTimeout(() => {
-      setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : null));
-    }, 2500);
+    setIsVideoModalOpen(true);
   };
-
-  const endCall = () => {
-    setActiveCall(null);
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      callTimerRef.current = null;
-    }
-  };
-
-  const toggleMuteCall = () => {
-    setActiveCall((prev) => (prev ? { ...prev, isMuted: !prev.isMuted } : null));
-  };
-
-  const toggleVideoCall = () => {
-    setActiveCall((prev) => (prev ? { ...prev, isVideoOff: !prev.isVideoOff } : null));
-  };
-
-  // Call Duration Timer
-  useEffect(() => {
-    if (activeCall && activeCall.status === 'connected') {
-      callTimerRef.current = setInterval(() => {
-        setActiveCall((prev) => (prev ? { ...prev, duration: prev.duration + 1 } : null));
-      }, 1000);
-    } else if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      callTimerRef.current = null;
-    }
-    return () => {
-      if (callTimerRef.current) {
-        clearInterval(callTimerRef.current);
-      }
-    };
-  }, [activeCall?.status]);
 
   const handleSaveUsername = () => {
     if (tempUsername.trim()) {
@@ -2140,9 +2178,16 @@ export default function Home() {
                                 <span className={`text-[9px] font-normal px-1 rounded ${isActive ? 'bg-white/20 text-white' : 'text-emerald-400'}`}>Active</span>
                               )}
                             </p>
-                            <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
-                              {dm.targetRole || 'ব্যক্তিগত মেসেঞ্জার চ্যাট'}
-                            </p>
+                            {typingUsers[dm.targetName] ? (
+                              <p className="text-[11px] font-bold text-amber-300 flex items-center gap-1 animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-ping"></span>
+                                <span>টাইপ করছেন...</span>
+                              </p>
+                            ) : (
+                              <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                                {dm.targetRole || 'ব্যক্তিগত মেসেঞ্জার চ্যাট'}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <button
@@ -2357,8 +2402,17 @@ export default function Home() {
                       {currentRoomObj.targetRole || 'সদস্য'}
                     </span>
                   </h3>
-                  <p className="text-xs flex items-center gap-1.5 truncate mt-0.5">
-                    {onlineUsers[currentRoomObj.targetName] ? (
+                  <div className="text-xs flex items-center gap-1.5 truncate mt-0.5">
+                    {typingUsers[currentRoomObj.targetName] ? (
+                      <span className="text-blue-400 font-bold flex items-center gap-1.5 animate-pulse">
+                        <span className="flex gap-0.5 items-center">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.3s]"></span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.15s]"></span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce"></span>
+                        </span>
+                        <span>টাইপ করছেন... (Typing...)</span>
+                      </span>
+                    ) : onlineUsers[currentRoomObj.targetName] ? (
                       <span className="text-emerald-400 font-medium flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                         Active now (অনলাইনে আছেন)
@@ -2366,7 +2420,7 @@ export default function Home() {
                     ) : (
                       <span className="text-slate-400">অফলাইন</span>
                     )}
-                  </p>
+                  </div>
                 </div>
               </div>
             ) : currentRoomObj.isCustom ? (
@@ -2395,9 +2449,20 @@ export default function Home() {
                     </span>
                     <Edit3 className="w-3 h-3 text-slate-500 group-hover/hdr:text-indigo-400 transition opacity-0 group-hover/hdr:opacity-100 hidden sm:inline" />
                   </h3>
-                  <p className="text-xs text-slate-400 truncate mt-0.5">
-                    {(currentRoomObj.members || [currentRoomObj.createdBy || username]).length} জন সদস্য • {onlineCount} জন অনলাইনে
-                  </p>
+                  <div className="text-xs text-slate-400 truncate mt-0.5 flex items-center gap-2">
+                    {Object.entries(typingUsers).filter(([u, isTyping]) => isTyping && u !== username).length > 0 ? (
+                      <span className="text-blue-400 font-semibold flex items-center gap-1.5 animate-pulse">
+                        <span className="flex gap-0.5 items-center">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.3s]"></span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.15s]"></span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce"></span>
+                        </span>
+                        <span>{Object.entries(typingUsers).filter(([u, isTyping]) => isTyping && u !== username).map(([u]) => u).join(', ')} লিখছেন...</span>
+                      </span>
+                    ) : (
+                      <span>{(currentRoomObj.members || [currentRoomObj.createdBy || username]).length} জন সদস্য • {onlineCount} জন অনলাইনে</span>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -2951,17 +3016,22 @@ export default function Home() {
           )}
           {/* Real-time Typing Indicators list */}
           {Object.entries(typingUsers).filter(([user, isTyping]) => isTyping && user !== username).length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-slate-400 italic px-2 animate-pulse mt-1 mb-2">
+            <div className="flex items-center gap-2.5 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl w-fit animate-in fade-in slide-in-from-bottom-2 duration-200 mt-2 mb-2 shadow-sm">
+              <div className="w-6 h-6 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xs">
+                💬
+              </div>
               <div className="flex gap-1 items-center justify-center py-1">
                 <span className="h-1.5 w-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                 <span className="h-1.5 w-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                 <span className="h-1.5 w-1.5 bg-blue-400 rounded-full animate-bounce"></span>
               </div>
-              <span>
-                {Object.entries(typingUsers)
-                  .filter(([user, isTyping]) => isTyping && user !== username)
-                  .map(([user]) => user)
-                  .join(', ')}{' '}
+              <span className="text-xs text-slate-300 font-medium">
+                <strong className="text-blue-400">
+                  {Object.entries(typingUsers)
+                    .filter(([user, isTyping]) => isTyping && user !== username)
+                    .map(([user]) => user)
+                    .join(', ')}
+                </strong>{' '}
                 টাইপ করছেন...
               </span>
             </div>
@@ -3072,6 +3142,7 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   setRecordedAudioUrl(null);
+                  setRecordedAudioBlob(null);
                   setRecordingTime(0);
                 }}
                 className="p-2 text-slate-400 hover:text-rose-400 rounded-lg transition shrink-0"
@@ -3462,86 +3533,17 @@ export default function Home() {
         </div>
       )}
 
-      {/* Simulated Audio/Video Call Active Screen Overlay */}
-      {activeCall && (
-        <div className="fixed inset-0 z-[150] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-between p-6 animate-in fade-in zoom-in-95 duration-200 text-white">
-          {/* Call Header */}
-          <div className="text-center pt-8 space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-xs font-mono text-blue-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>{activeCall.type === 'video' ? 'ভিডিও কল' : 'অডিও কল'} • {activeCall.status === 'connected' ? 'সংযুক্ত' : 'রিং হচ্ছে...'}</span>
-            </div>
-            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight mt-2">{activeCall.target}</h2>
-            <p className="text-sm font-mono text-slate-400">
-              {formatRecordingTime(callDuration)}
-            </p>
-          </div>
-
-          {/* Call Center Avatar / Video Box */}
-          <div className="my-auto flex flex-col items-center justify-center">
-            {activeCall.type === 'video' && activeCall.isVideoOn ? (
-              <div className="w-72 h-72 md:w-96 md:h-96 rounded-3xl bg-slate-900 border-2 border-indigo-500/50 shadow-2xl flex items-center justify-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-tr from-blue-950/60 to-indigo-950/60 flex flex-col items-center justify-center p-4 text-center">
-                  <div className="w-24 h-24 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-4xl mb-4 shadow-lg animate-pulse">
-                    👤
-                  </div>
-                  <span className="text-xs font-bold text-indigo-300 bg-indigo-900/50 px-3 py-1 rounded-full border border-indigo-500/30">
-                    এইচডি লাইভ ক্যামেরা সিমুলেশন
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-6xl shadow-2xl border-4 border-slate-800 animate-pulse">
-                  👤
-                </div>
-                <div className="absolute -inset-4 rounded-full border-2 border-blue-500/30 animate-ping pointer-events-none" />
-              </div>
-            )}
-          </div>
-
-          {/* Call Controls Bar */}
-          <div className="flex items-center gap-4 pb-8">
-            <button
-              type="button"
-              onClick={toggleMuteCall}
-              className={`p-4 rounded-full border text-lg transition active:scale-90 ${
-                activeCall.isMuted
-                  ? 'bg-rose-600/30 border-rose-500 text-rose-300'
-                  : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-white'
-              }`}
-              title={activeCall.isMuted ? 'আনমিউট করুন' : 'মিউট করুন'}
-            >
-              <Mic className="w-6 h-6" />
-            </button>
-
-            {activeCall.type === 'video' && (
-              <button
-                type="button"
-                onClick={toggleVideoCall}
-                className={`p-4 rounded-full border text-lg transition active:scale-90 ${
-                  !activeCall.isVideoOn
-                    ? 'bg-rose-600/30 border-rose-500 text-rose-300'
-                    : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-white'
-                }`}
-                title={activeCall.isVideoOn ? 'ক্যামেরা বন্ধ করুন' : 'ক্যামেরা চালু করুন'}
-              >
-                <Video className="w-6 h-6" />
-              </button>
-            )}
-
-            {/* End Call Red Button */}
-            <button
-              type="button"
-              onClick={endCall}
-              className="p-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/40 active:scale-90 transition border border-rose-400"
-              title="কল কেটে দিন"
-            >
-              <Phone className="w-6 h-6 rotate-[135deg]" />
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Video / Audio Call Simulation with MediaDevices Preview */}
+      <VideoCallModal
+        isOpen={isVideoModalOpen}
+        onClose={() => setIsVideoModalOpen(false)}
+        targetUser={videoCallConfig.targetName}
+        targetAvatar={videoCallConfig.targetAvatar}
+        currentUsername={username}
+        currentUserAvatar={customAvatarUrl || user?.custom_avatar_url}
+        isDarkMode={isDarkMode}
+        callType={videoCallConfig.type}
+      />
 
       {/* Lightbox Modal */}
       {lightboxImage && (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { MessageCircle, ThumbsUp, Plus, Tag, Search, User, Filter, X, CornerDownRight, Sparkles, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 
 const CATEGORIES = ['সব পোস্ট', 'ডিজাইন', 'প্রোগ্রামিং', 'সাধারণ আড্ডা', 'প্রশ্ন ও উত্তর'];

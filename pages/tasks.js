@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { appwrite as supabase } from '../lib/appwrite';
 import { Bell, Calendar, Clock, Mail, Plus, X, CheckCircle, AlertTriangle, Search, Trash2, Edit3, AlertCircle, Sparkles, Volume2, ShieldCheck } from 'lucide-react';
 import { syncAllAlarmsWithServiceWorker, scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, triggerTestSWAlarm } from '../utils/alarmScheduler';
 import { requestNotificationPermission, playTaskAlarmRingtone } from '../utils/messengerSound';

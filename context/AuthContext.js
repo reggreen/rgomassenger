@@ -72,9 +72,9 @@ export function AuthProvider({ children }) {
         localStorage.setItem('rg_all_users', JSON.stringify(users));
       }
 
-      // Sync to Supabase profiles
-      const { supabase } = await import('../lib/supabase');
-      await supabase.from('profiles').upsert([{
+      // Sync to Appwrite profiles
+      const { appwrite } = await import('../lib/appwrite');
+      await appwrite.from('profiles').upsert([{
         id: userObj.id,
         name: userObj.name,
         email: userObj.email,
@@ -287,9 +287,9 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // Merge with Supabase profiles
-      const { supabase } = await import('../lib/supabase');
-      const { data: remoteProfiles } = await supabase.from('profiles').select('*');
+      // Merge with Appwrite profiles
+      const { appwrite } = await import('../lib/appwrite');
+      const { data: remoteProfiles } = await appwrite.from('profiles').select('*');
 
       const combinedMap = new Map();
       // Add default admin account
@@ -330,13 +330,13 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // 2. Remove from Supabase profiles
-      const { supabase } = await import('../lib/supabase');
+      // 2. Remove from Appwrite profiles
+      const { appwrite } = await import('../lib/appwrite');
       if (userId) {
-        await supabase.from('profiles').delete().eq('id', userId);
+        await appwrite.from('profiles').delete().eq('id', userId);
       }
       if (userEmail) {
-        await supabase.from('profiles').delete().eq('email', userEmail);
+        await appwrite.from('profiles').delete().eq('email', userEmail);
       }
 
       // 3. If deleting current logged-in user, logout
@@ -368,12 +368,12 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // Update Supabase profiles
-      const { supabase } = await import('../lib/supabase');
+      // Update Appwrite profiles
+      const { appwrite } = await import('../lib/appwrite');
       if (userId) {
-        await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+        await appwrite.from('profiles').update({ role: newRole }).eq('id', userId);
       } else if (userEmail) {
-        await supabase.from('profiles').update({ role: newRole }).eq('email', userEmail);
+        await appwrite.from('profiles').update({ role: newRole }).eq('email', userEmail);
       }
 
       // If updating current logged in user
