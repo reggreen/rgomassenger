@@ -4,10 +4,11 @@ import { appwrite as supabase, uploadVoiceRecording, sendTypingStatus, sendOnlin
 import { useAuth } from '../context/AuthContext';
 import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
 import { scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, syncAllAlarmsWithServiceWorker } from '../utils/alarmScheduler';
+import { registerPushNotifications, sendPushForMessage, sendTestPushNotification } from '../utils/pushManager';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
 import ImageMessageBubble from '../components/ImageMessageBubble';
 import VideoCallModal from '../components/VideoCallModal';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle, Phone, PhoneCall, PhoneOff, Video, VideoOff, Info, MoreHorizontal, ThumbsUp, MessageCircle, SlidersHorizontal, Share2, CornerDownRight, Download, ZoomIn, Settings, Crown, LogOut, UserMinus } from 'lucide-react';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle, Phone, PhoneCall, PhoneOff, Video, VideoOff, Info, MoreHorizontal, ThumbsUp, MessageCircle, SlidersHorizontal, Share2, CornerDownRight, Download, ZoomIn, Settings, Crown, LogOut, UserMinus, ShieldCheck, Smartphone, SendHorizontal } from 'lucide-react';
 
 const GROUP_PRESET_EMOJIS = [
   '💬', '🚀', '🔥', '🎮', '⚽', '💡', '🎉', '❤️',
@@ -78,18 +79,21 @@ const getAvatarForUsername = (name) => {
   return PRESET_AVATARS[index];
 };
 
-const CHANNELS = [
-  { id: 'general', name: 'সাধারণ আলোচনা (General)', desc: 'কমিউনিটির সবার সাথে সাধারণ কুশল বিনিময়', minRole: 'member', minRoleLabel: 'সকল সদস্য' },
-  { id: 'tech-talk', name: 'টেক আড্ডা (Tech)', desc: 'কোডিং, ডিজাইন ও প্রযুক্তি বিষয়ক আলোচনা', minRole: 'member', minRoleLabel: 'সকল সদস্য' },
-  { id: 'fun', name: 'বিনোদন ও আড্ডা (Fun)', desc: 'হাসি-ঠাট্টা ও হালকা বিনোদন', minRole: 'member', minRoleLabel: 'সকল সদস্য' },
-  { id: 'announcements', name: 'ঘোষণা ও আপডেট (Updates)', desc: 'কমিউনিটির অফিসিয়াল নোটিশ বোর্ড (মডারেটর ও অ্যাডমিন পোস্ট)', minRole: 'moderator', minRoleLabel: 'মডারেটর ও অ্যাডমিন' },
-  { id: 'admin-lounge', name: 'অ্যাডমিন লাউঞ্জ (Admin Only)', desc: 'গোপন ও সংরক্ষিত অ্যাডমিন স্ট্র্যাটেজি চ্যানেল', minRole: 'admin', minRoleLabel: 'শুধুমাত্র অ্যাডমিন' }
+const CHANNELS = [];
+
+const DEFAULT_OFFICE_GROUPS = [
+  {
+    id: 'grp_office_updates',
+    name: 'অফিস কাজের সার্বিক আপডেট',
+    desc: 'অফিসের প্রতিদিনের কাজের সার্বিক আপডেট ও রিপোর্ট শেয়ারিং গ্রুপ',
+    emoji: '💼',
+    createdBy: 'redgreenonline2023@gmail.com',
+    members: ['ALL'],
+    createdAt: new Date().toISOString()
+  }
 ];
 
-const PRESET_NAMES = [
-  'সাইদুর রহমান', 'আসিফ ইকবাল', 'তানভীর হাসান', 'সাদিয়া তাসনিম', 'ফারিহা জাহান',
-  'জাহিদ হাসান', 'নাবিলা আনজুম', 'রাফসান আহমেদ', 'মাহমুদ বিল্লাহ', 'ফারহান চৌধুরী'
-];
+const PRESET_NAMES = ['অফিস মেম্বার'];
 
 const getLinkPreview = (text) => {
   if (!text) return null;
@@ -239,13 +243,16 @@ const formatExactDateTime = (dateString) => {
 
 export default function Home() {
   const router = useRouter();
-  const { user, isAdmin, isModerator, userRole, getRegisteredUsers } = useAuth();
+  const { user, isAdmin, isModerator, userRole, getRegisteredUsers, adminUpdateUserProfile, removeMemberFromApp } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [username, setUsername] = useState('');
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [tempUsername, setTempUsername] = useState('');
-  const [activeRoom, setActiveRoom] = useState('general');
+  const [activeRoom, setActiveRoom] = useState('grp_office_updates');
+  const [adminEditUser, setAdminEditUser] = useState(null);
+  const [adminRemoveUser, setAdminRemoveUser] = useState(null);
+  const [adminActionStatus, setAdminActionStatus] = useState({ loading: false, msg: '', type: '' });
   const [isSending, setIsSending] = useState(false);
   const [dbError, setDbError] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
@@ -286,6 +293,12 @@ export default function Home() {
   const [isManageMembersModalOpen, setIsManageMembersModalOpen] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
+
+  // Background Web Push Notification States (Messenger-style background alerts)
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+  const [isPushRegistering, setIsPushRegistering] = useState(false);
+  const [pushStatusMessage, setPushStatusMessage] = useState('');
+  const [isSendingTestPush, setIsSendingTestPush] = useState(false);
 
   // Group Management & Edit Settings Modal State
   const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
@@ -416,9 +429,13 @@ export default function Home() {
       if (savedGroups) {
         try {
           loadedCustom = JSON.parse(savedGroups);
-          setCustomGroups(loadedCustom);
         } catch (e) {}
       }
+      if (!loadedCustom || loadedCustom.length === 0) {
+        loadedCustom = DEFAULT_OFFICE_GROUPS;
+        localStorage.setItem('rg_custom_groups', JSON.stringify(DEFAULT_OFFICE_GROUPS));
+      }
+      setCustomGroups(loadedCustom);
 
       // Restore scheduled task alerts
       const savedTaskAlerts = localStorage.getItem('rg_scheduled_task_alerts');
@@ -429,14 +446,16 @@ export default function Home() {
       }
 
       // Restore active channel / group / DM room
-      const allValid = [...CHANNELS, ...loadedCustom, ...loadedDMs];
+      const allValid = [...loadedCustom, ...loadedDMs];
       const savedRoom = localStorage.getItem('rg_active_room');
       if (savedRoom && allValid.some(c => c.id === savedRoom)) {
         setActiveRoom(savedRoom);
         const savedDraft = localStorage.getItem(`rg_chat_draft_${savedRoom}`);
         if (savedDraft) setInputText(savedDraft);
       } else {
-        const savedDraft = localStorage.getItem('rg_chat_draft_general');
+        const defaultRoomId = loadedCustom[0]?.id || 'grp_office_updates';
+        setActiveRoom(defaultRoomId);
+        const savedDraft = localStorage.getItem(`rg_chat_draft_${defaultRoomId}`);
         if (savedDraft) setInputText(savedDraft);
       }
     }
@@ -462,11 +481,11 @@ export default function Home() {
         setTempUsername(saved);
         currentUsername = saved;
       } else {
-        const randomName = PRESET_NAMES[Math.floor(Math.random() * PRESET_NAMES.length)] + ' (নতুন)';
-        setUsername(randomName);
-        setTempUsername(randomName);
-        localStorage.setItem('rg_username', randomName);
-        currentUsername = randomName;
+        const fallbackName = user?.email ? user.email.split('@')[0] : 'অফিস মেম্বার';
+        setUsername(fallbackName);
+        setTempUsername(fallbackName);
+        localStorage.setItem('rg_username', fallbackName);
+        currentUsername = fallbackName;
       }
     }
 
@@ -512,6 +531,78 @@ export default function Home() {
     };
     fetchProfiles();
   }, [user]);
+
+  // Background Web Push Notification Lifecycle (Messenger background alerts)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const checkPushStatus = () => {
+      const isRegistered = localStorage.getItem('rg_push_registered') === 'true';
+      setIsPushSubscribed(isRegistered);
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && username) {
+        registerPushNotifications(username, user?.email || '', userRole || '')
+          .then((res) => {
+            if (res?.success) setIsPushSubscribed(true);
+          })
+          .catch(() => {});
+      }
+    };
+
+    checkPushStatus();
+
+    const handlePushStatusChanged = (e) => {
+      if (e.detail?.isRegistered !== undefined) {
+        setIsPushSubscribed(e.detail.isRegistered);
+      }
+    };
+
+    window.addEventListener('rg_push_status_changed', handlePushStatusChanged);
+    return () => {
+      window.removeEventListener('rg_push_status_changed', handlePushStatusChanged);
+    };
+  }, [username, user?.email, userRole]);
+
+  // Manual Push Notification Enable Trigger
+  const handleEnablePushNotifications = async () => {
+    if (!username) return;
+    setIsPushRegistering(true);
+    setPushStatusMessage('ব্যাকগ্রাউন্ড পুশ সার্ভিস চালু করা হচ্ছে...');
+    try {
+      const res = await registerPushNotifications(username, user?.email || '', userRole || '');
+      if (res?.success) {
+        setIsPushSubscribed(true);
+        setPushStatusMessage('✅ ব্যাকগ্রাউন্ড মেসেঞ্জার নোটিফিকেশন সফলভাবে চালু হয়েছে!');
+      } else if (res?.reason === 'permission_denied') {
+        setPushStatusMessage('⚠️ ব্রাউজারে নোটিফিকেশন পারমিশন ব্লক করা আছে। সাইট সেটিংসে এলাউ করুন।');
+      } else {
+        setPushStatusMessage('⚠️ ব্যাকগ্রাউন্ড পুশ চালু করা সম্ভব হয়নি।');
+      }
+    } catch (e) {
+      setPushStatusMessage('ত্রুটি: ' + (e.message || ''));
+    } finally {
+      setIsPushRegistering(false);
+      setTimeout(() => setPushStatusMessage(''), 4500);
+    }
+  };
+
+  // Test Push Notification Trigger
+  const handleSendTestPush = async () => {
+    setIsSendingTestPush(true);
+    setPushStatusMessage('টেস্ট পুশ নোটিফিকেশন পাঠানো হচ্ছে...');
+    try {
+      const res = await sendTestPushNotification(username);
+      if (res?.success) {
+        setPushStatusMessage('🔔 টেস্ট নোটিফিকেশন পাঠানো হয়েছে! মোবাইলে/স্ক্রিনে চেক করুন।');
+      } else {
+        setPushStatusMessage(res?.message || 'টেস্ট নোটিফিকেশন পাঠানো সম্ভব হয়নি।');
+      }
+    } catch (e) {
+      setPushStatusMessage('ত্রুটি: ' + (e.message || ''));
+    } finally {
+      setIsSendingTestPush(false);
+      setTimeout(() => setPushStatusMessage(''), 4500);
+    }
+  };
 
   // Theme Toggle Handler
   const handleToggleTheme = () => {
@@ -572,7 +663,7 @@ export default function Home() {
       localStorage.setItem('rg_direct_messages', JSON.stringify(filtered));
     }
     if (activeRoom === dmId) {
-      setActiveRoom('general');
+      setActiveRoom(customGroups[0]?.id || 'grp_office_updates');
     }
   };
 
@@ -1362,6 +1453,38 @@ export default function Home() {
               prev.map((msg) => (msg.id === tempId ? data[0] : msg))
             );
           }
+
+          // Dispatch background Web Push notification to mobile and other devices
+          try {
+            let isGroupChat = true;
+            let groupTitle = '';
+            let dmRecipient = '';
+
+            if (activeRoom.startsWith('dm_')) {
+              isGroupChat = false;
+              const participants = activeRoom.replace('dm_', '').split('_');
+              dmRecipient = participants.find((p) => p !== username) || '';
+            } else if (activeRoom.startsWith('group_')) {
+              isGroupChat = true;
+              const foundGrp = customGroups.find((g) => g.id === activeRoom);
+              groupTitle = foundGrp?.name || 'কাজের গ্রুপ';
+            } else {
+              isGroupChat = true;
+              groupTitle = activeRoom === 'general' ? 'সাধারণ গ্রুপ' : activeRoom;
+            }
+
+            sendPushForMessage({
+              sender: username,
+              room: activeRoom,
+              text: inputText.trim(),
+              isGroup: isGroupChat,
+              groupName: groupTitle,
+              targetUsername: dmRecipient,
+              customAvatarUrl: resolvedCustomAvatar,
+              hasAudio: !!recordedAudioBlob || !!audioPayloadUrl,
+              hasImage: !!selectedImage
+            }).catch((err) => console.warn('Push notification dispatch notice:', err));
+          } catch (e) {}
         }
       } catch (err) {
         console.error('Send error:', err);
@@ -1409,7 +1532,40 @@ export default function Home() {
         setMessages((prev) =>
           prev.map((msg) => (msg.id === tempId ? data[0] : msg))
         );
+
+        // Dispatch background Web Push notification for quick like
+        try {
+          let isGroupChat = true;
+          let groupTitle = '';
+          let dmRecipient = '';
+
+          if (activeRoom.startsWith('dm_')) {
+            isGroupChat = false;
+            const participants = activeRoom.replace('dm_', '').split('_');
+            dmRecipient = participants.find((p) => p !== username) || '';
+          } else if (activeRoom.startsWith('group_')) {
+            isGroupChat = true;
+            const foundGrp = customGroups.find((g) => g.id === activeRoom);
+            groupTitle = foundGrp?.name || 'কাজের গ্রুপ';
+          } else {
+            isGroupChat = true;
+            groupTitle = activeRoom === 'general' ? 'সাধারণ গ্রুপ' : activeRoom;
+          }
+
+          sendPushForMessage({
+            sender: username,
+            room: activeRoom,
+            text: '👍 লাইক পাঠিয়েছেন',
+            isGroup: isGroupChat,
+            groupName: groupTitle,
+            targetUsername: dmRecipient,
+            customAvatarUrl: resolvedCustomAvatar,
+            hasAudio: false,
+            hasImage: false
+          }).catch((err) => console.warn('Push notification quick like notice:', err));
+        } catch (e) {}
       }
+
     } catch (err) {
       console.error('Quick like error:', err);
     } finally {
@@ -1502,13 +1658,18 @@ export default function Home() {
     setSelectedAvatarId('av-1');
   };
 
-  // Group Creation Handler
+  // Group Creation Handler (Exclusively for Admin to select members, name group & initialize persistent thread)
   const handleCreateGroup = (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('শুধুমাত্র সিস্টেম অ্যাডমিন নতুন গ্রুপ তৈরি করতে পারেন।');
+      return;
+    }
     if (!newGroupName.trim()) return;
     const initialMembers = Array.from(new Set([username, ...selectedGroupMembers]));
+    const newGroupId = 'group_' + Date.now();
     const newGroup = {
-      id: 'group_' + Date.now(),
+      id: newGroupId,
       name: newGroupName.trim(),
       desc: newGroupDesc.trim() || 'ম্যাসেঞ্জার কাস্টম গ্রুপ',
       emoji: newGroupEmoji || '💬',
@@ -1522,7 +1683,30 @@ export default function Home() {
     setCustomGroups(updatedGroups);
     if (typeof window !== 'undefined') {
       localStorage.setItem('rg_custom_groups', JSON.stringify(updatedGroups));
+      window.dispatchEvent(new CustomEvent('rg_groups_updated', { detail: updatedGroups }));
     }
+
+    // Initialize Persistent Group Chat Thread in Database
+    try {
+      supabase.from('messages').insert([
+        {
+          room: newGroupId,
+          sender: 'সিস্টেম অ্যাডমিন',
+          content: JSON.stringify({
+            text: `🎉 "${newGroup.name}" কাজের গ্রুপ সফলভাবে চালু হয়েছে!\nসকল নির্বাচিত সদস্যদের স্বাগতম।`,
+            isSystem: true,
+            isGroupInit: true,
+            groupName: newGroup.name,
+            createdBy: username,
+            createdAt: new Date().toISOString()
+          }),
+          created_at: new Date().toISOString()
+        }
+      ]).then(() => {}).catch(err => console.warn('Persistent group thread init fallback:', err));
+    } catch (dbErr) {
+      console.warn('Persistent group chat thread error:', dbErr);
+    }
+
     setNewGroupName('');
     setNewGroupDesc('');
     setNewGroupEmoji('💬');
@@ -1632,7 +1816,7 @@ export default function Home() {
         localStorage.setItem('rg_custom_groups', JSON.stringify(updated));
       }
       if (activeRoom === groupId) {
-        handleSelectRoom('general');
+        handleSelectRoom(updated[0]?.id || 'grp_office_updates');
       }
     }
     setIsEditGroupModalOpen(false);
@@ -1647,7 +1831,7 @@ export default function Home() {
       localStorage.setItem('rg_custom_groups', JSON.stringify(updated));
     }
     if (activeRoom === groupId) {
-      handleSelectRoom('general');
+      handleSelectRoom(updated[0]?.id || 'grp_office_updates');
     }
     setIsEditGroupModalOpen(false);
   };
@@ -1734,30 +1918,31 @@ export default function Home() {
 
   // Calculate combined rooms & pinned messages
   const allRooms = [
-    ...CHANNELS.map(c => ({ ...c, isCustom: false, emoji: null })),
     ...customGroups.map(g => ({
       id: g.id,
       name: g.name,
       desc: g.desc,
       isCustom: true,
-      emoji: g.emoji || '💬',
+      emoji: g.emoji || '💼',
       customAvatarUrl: g.customAvatarUrl || g.avatarUrl || null,
       avatarUrl: g.avatarUrl || g.customAvatarUrl || null,
       createdBy: g.createdBy,
-      members: g.members || [g.createdBy || username],
+      members: g.members || ['ALL'],
       createdAt: g.createdAt
     })),
     ...directMessages.map(dm => ({
       id: dm.id,
       name: `💬 ${dm.targetName}`,
-      desc: `ডাইরেক্ট মেসেজ (${dm.targetRole || 'সদস্য'})`,
+      desc: `ডাইরেক্ট মেসেজ (${dm.targetRole || 'অফিস মেম্বার'})`,
       isCustom: true,
       isDM: true,
       emoji: dm.avatarEmoji || '👤',
-      targetName: dm.targetName
+      targetName: dm.targetName,
+      targetEmail: dm.targetEmail || '',
+      customAvatarUrl: dm.customAvatarUrl || null
     }))
   ];
-  const currentRoomObj = allRooms.find(r => r.id === activeRoom) || CHANNELS[0];
+  const currentRoomObj = allRooms.find(r => r.id === activeRoom) || customGroups[0] || DEFAULT_OFFICE_GROUPS[0];
 
   const filteredUsers = registeredUsersList.filter((usr) => {
     const q = (userSearchQuery || '').trim().toLowerCase();
@@ -1767,6 +1952,67 @@ export default function Home() {
     const roleMatch = (usr.role || '').toLowerCase().includes(q);
     return nameMatch || emailMatch || roleMatch;
   }).filter((usr) => usr.name !== username);
+
+  const filteredOfficeGroups = customGroups.filter((g) => {
+    const q = (userSearchQuery || '').trim().toLowerCase();
+    if (!q) return true;
+    return (g.name || '').toLowerCase().includes(q) || (g.desc || '').toLowerCase().includes(q);
+  });
+
+  const filteredOfficeMembers = registeredUsersList.filter((usr) => {
+    const q = (userSearchQuery || '').trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (usr.name || '').toLowerCase().includes(q) ||
+      (usr.email || '').toLowerCase().includes(q) ||
+      (usr.role || '').toLowerCase().includes(q)
+    );
+  });
+
+  const handleAdminSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!adminEditUser) return;
+    setAdminActionStatus({ loading: true, msg: 'তথ্য সংরক্ষণ করা হচ্ছে...', type: 'info' });
+    const res = await adminUpdateUserProfile(adminEditUser.id, adminEditUser.email, {
+      name: adminEditUser.name,
+      role: adminEditUser.role,
+      phone: adminEditUser.phone || '',
+      bio: adminEditUser.bio || ''
+    });
+    setAdminActionStatus({ loading: false, msg: res.message, type: res.success ? 'success' : 'error' });
+    if (res.success) {
+      if (getRegisteredUsers) {
+        const updated = await getRegisteredUsers();
+        if (updated) setRegisteredUsersList(updated);
+      }
+      setTimeout(() => {
+        setAdminEditUser(null);
+        setAdminActionStatus({ loading: false, msg: '', type: '' });
+      }, 1200);
+    }
+  };
+
+  const handleAdminConfirmRemoveUser = async () => {
+    if (!adminRemoveUser) return;
+    setAdminActionStatus({ loading: true, msg: 'সম্পূর্ণ অ্যাপ থেকে রিমুভ করা হচ্ছে...', type: 'info' });
+    const res = await removeMemberFromApp(adminRemoveUser.id, adminRemoveUser.email);
+    setAdminActionStatus({ loading: false, msg: res.message, type: res.success ? 'success' : 'error' });
+    if (res.success) {
+      if (getRegisteredUsers) {
+        const updated = await getRegisteredUsers();
+        if (updated) setRegisteredUsersList(updated);
+      }
+      setDirectMessages((prev) => prev.filter(dm => (dm.targetEmail || '').toLowerCase() !== (adminRemoveUser.email || '').toLowerCase()));
+      setCustomGroups((prev) => prev.map(g => ({
+        ...g,
+        members: (g.members || []).filter(m => m !== adminRemoveUser.name && m !== adminRemoveUser.email)
+      })));
+      setTimeout(() => {
+        setAdminRemoveUser(null);
+        setAdminActionStatus({ loading: false, msg: '', type: '' });
+      }, 1200);
+    }
+  };
 
   const pinnedMessages = messages.filter((msg) => {
     if (!msg.content) return false;
@@ -1955,331 +2201,114 @@ export default function Home() {
           </div>
         </div>
 
-        {/* User Search & Direct Chat Search Bar */}
+        {/* Office Search Bar */}
         <div className={`p-3 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-100/80 border-slate-200'}`}>
           <div className="relative">
             <Search className={`w-3.5 h-3.5 absolute left-3 top-2.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
             <input
               type="text"
-              placeholder="মেসেঞ্জারে বন্ধু বা গ্রুপ খুঁজুন..."
+              placeholder="অফিস গ্রুপ বা মেম্বার খুঁজুন..."
               value={userSearchQuery}
-              onChange={(e) => {
-                setUserSearchQuery(e.target.value);
-                if (!isUserSearchOpen) setIsUserSearchOpen(true);
-              }}
-              onFocus={() => setIsUserSearchOpen(true)}
+              onChange={(e) => setUserSearchQuery(e.target.value)}
               className={`w-full text-xs pl-8 pr-7 py-2 rounded-full border focus:outline-none transition ${
                 isDarkMode
-                  ? 'bg-slate-900 border-slate-700/80 text-white placeholder-slate-500 focus:border-blue-500'
-                  : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-blue-500 shadow-sm'
+                  ? 'bg-slate-900 border-slate-700/80 text-white placeholder-slate-500 focus:border-indigo-500'
+                  : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-indigo-500 shadow-sm'
               }`}
             />
             {userSearchQuery && (
               <button
                 type="button"
-                onClick={() => {
-                  setUserSearchQuery('');
-                  setIsUserSearchOpen(false);
-                }}
+                onClick={() => setUserSearchQuery('')}
                 className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-
-          {/* Search Results Dropdown Panel */}
-          {isUserSearchOpen && (
-            <div className={`mt-2 p-2.5 rounded-2xl border shadow-2xl max-h-64 overflow-y-auto space-y-1.5 animate-in fade-in duration-150 relative z-30 ${
-              isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200 shadow-lg'
-            }`}>
-              <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/60 px-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
-                  <UserPlus className="w-3 h-3" />
-                  সদস্য তালিকা ({filteredUsers.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsUserSearchOpen(false)}
-                  className="text-[10px] text-slate-400 hover:text-slate-200 p-0.5 rounded"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-
-              {filteredUsers.length === 0 ? (
-                <p className="text-[11px] text-slate-500 p-2 text-center">কোনো ইউজার খুঁজে পাওয়া যায়নি</p>
-              ) : (
-                filteredUsers.map((usr) => (
-                  <div
-                    key={usr.email || usr.id || usr.name}
-                    className={`flex items-center justify-between p-2 rounded-xl border transition ${
-                      isDarkMode
-                        ? 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-800/80'
-                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 truncate min-w-0">
-                      <span className="text-base flex-shrink-0">{usr.avatar_emoji || '🧑‍💻'}</span>
-                      <div className="truncate">
-                        <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                          {usr.name}
-                        </p>
-                        <p className="text-[10px] text-slate-500 truncate">{usr.role || 'সদস্য'}</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleStartDirectMessage(usr)}
-                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-bold px-2.5 py-1 rounded-full transition active:scale-95 shadow-sm shrink-0 flex items-center gap-1"
-                      title={`${usr.name} কে মেসেজ পাঠান`}
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      চ্যাট
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Messenger Active Now Stories / Horizontal Contacts Bar */}
-        <div className={`px-3 py-2.5 border-b ${isDarkMode ? 'border-slate-800/80 bg-slate-900/30' : 'border-slate-200 bg-slate-100/50'}`}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              অ্যাক্টিভ নাও ({onlineCount})
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsOnlineListOpen(true)}
-              className="text-[10px] text-blue-400 hover:underline font-medium"
-            >
-              সবাই
-            </button>
-          </div>
-          <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none select-none">
-            {onlineUsersList.map((usr) => {
-              const uAvUrl = usr.customAvatarUrl || (usr.username === username ? customAvatarUrl : null);
-              const uAv = PRESET_AVATARS.find(a => a.id === usr.avatarId) || getAvatarForUsername(usr.username);
-              const isCurrent = usr.username === username;
-              return (
-                <button
-                  key={usr.username}
-                  type="button"
-                  onClick={() => {
-                    if (!isCurrent) {
-                      handleStartDirectMessage({ name: usr.username, role: 'সদস্য', avatar_emoji: uAv.emoji });
-                    }
-                  }}
-                  className="flex flex-col items-center gap-1 flex-shrink-0 group focus:outline-none"
-                  title={isCurrent ? 'আপনি অনলাইনে আছেন' : `${usr.username} এর সাথে চ্যাট শুরু করুন`}
-                >
-                  <div className="relative">
-                    <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-tr from-emerald-500 via-blue-500 to-indigo-500 transition-transform group-hover:scale-105">
-                      {uAvUrl ? (
-                        <img src={uAvUrl} alt={usr.username} className="w-full h-full rounded-full object-cover border-2 border-slate-950" />
-                      ) : (
-                        <div className={`w-full h-full rounded-full bg-gradient-to-tr ${uAv.bg} text-sm flex items-center justify-center border-2 border-slate-950 shadow-inner`}>
-                          {uAv.emoji}
-                        </div>
-                      )}
-                    </div>
-                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm" />
-                  </div>
-                  <span className="text-[10px] font-medium text-slate-300 max-w-[50px] truncate leading-tight group-hover:text-blue-400">
-                    {isCurrent ? 'আপনি' : usr.username}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Messenger Category Tabs */}
-        <div className="px-3 pt-2.5 pb-1 flex items-center gap-1 bg-slate-950 border-b border-slate-800/80">
-          {[
-            { id: 'all', label: 'সব চ্যাট', count: CHANNELS.length + customGroups.length + directMessages.length },
-            { id: 'dms', label: 'ডাইরেক্ট', count: directMessages.length },
-            { id: 'groups', label: 'গ্রুপ ও চ্যানেল', count: CHANNELS.length + customGroups.length }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setSidebarTab(tab.id)}
-              className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 select-none ${
-                sidebarTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${sidebarTab === tab.id ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Conversations Feed */}
-        <div className="p-3 flex-1 overflow-y-auto space-y-4">
+        {/* Office Messenger Content Feed */}
+        <div className="p-3 flex-1 overflow-y-auto space-y-5">
           
-          {/* Direct Messages Section */}
-          {(sidebarTab === 'all' || sidebarTab === 'dms') && (
-            <div>
-              <div className="flex items-center justify-between px-2 mb-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-                  <span>ডাইরেক্ট মেসেজ (DMs)</span>
-                </h4>
-                {directMessages.length > 0 && (
-                  <span className="text-[10px] font-mono text-slate-500">{directMessages.length} টি</span>
-                )}
-              </div>
-
-              {directMessages.length === 0 ? (
-                sidebarTab === 'dms' && (
-                  <div className="p-4 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl text-center space-y-2">
-                    <p className="text-xs text-slate-400">কোনো ডাইরেক্ট চ্যাট নেই</p>
-                    <p className="text-[11px] text-slate-500">উপরে সার্চ বারে নাম লিখে বন্ধুদের মেসেজ পাঠান</p>
-                  </div>
-                )
-              ) : (
-                <div className="space-y-1.5">
-                  {directMessages.map((dm) => {
-                    const isActive = activeRoom === dm.id;
-                    const isTargetOnline = !!onlineUsers[dm.targetName];
-                    return (
-                      <div
-                        key={dm.id}
-                        onClick={() => handleSelectRoom(dm.id)}
-                        className={`w-full text-left flex items-center justify-between gap-2.5 p-2.5 rounded-2xl transition duration-150 cursor-pointer group/dm ${
-                          isActive
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                            : isDarkMode
-                            ? 'text-slate-300 hover:bg-slate-900/90 hover:text-white'
-                            : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 truncate min-w-0">
-                          <div className="relative flex-shrink-0">
-                            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-base shadow-sm">
-                              {dm.avatarEmoji || '👤'}
-                            </div>
-                            {isTargetOnline && (
-                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-950" />
-                            )}
-                          </div>
-                          <div className="truncate">
-                            <p className="text-xs font-bold truncate flex items-center gap-1.5">
-                              <span>{dm.targetName}</span>
-                              {isTargetOnline && (
-                                <span className={`text-[9px] font-normal px-1 rounded ${isActive ? 'bg-white/20 text-white' : 'text-emerald-400'}`}>Active</span>
-                              )}
-                            </p>
-                            {typingUsers[dm.targetName] ? (
-                              <p className="text-[11px] font-bold text-amber-300 flex items-center gap-1 animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-ping"></span>
-                                <span>টাইপ করছেন...</span>
-                              </p>
-                            ) : (
-                              <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
-                                {dm.targetRole || 'ব্যক্তিগত মেসেঞ্জার চ্যাট'}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteDM(dm.id, e)}
-                          className="opacity-0 group-hover/dm:opacity-100 text-slate-400 hover:text-rose-400 p-1.5 rounded-lg transition"
-                          title="চ্যাট রিমুভ করুন"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Custom Groups Section */}
-          {(sidebarTab === 'all' || sidebarTab === 'groups') && (
-            <div className="pt-2 border-t border-slate-800/80">
-              <div className="flex items-center justify-between px-2 mb-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>মেসেঞ্জার গ্রুপ ({customGroups.length})</span>
-                </h4>
+          {/* Section 1: Office Work Groups */}
+          <div>
+            <div className="flex items-center justify-between px-1 mb-2.5">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-indigo-400" />
+                <span>কাজের গ্রুপসমূহ ({filteredOfficeGroups.length})</span>
+              </h4>
+              {isAdmin && (
                 <button
                   type="button"
                   onClick={() => setIsCreateGroupOpen(true)}
-                  className="text-[11px] bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white px-2 py-1 rounded-xl border border-blue-500/30 font-semibold flex items-center gap-1 transition active:scale-95 shadow-sm"
-                  title="নতুন মেসেঞ্জার গ্রুপ তৈরি করুন"
+                  className="text-[11px] bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-xl border border-indigo-500/40 font-bold flex items-center gap-1 transition active:scale-95 shadow-sm"
+                  title="অ্যাডমিন হিসেবে নতুন কাজের গ্রুপ তৈরি করুন"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>গ্রুপ তৈরি</span>
+                  <span>নতুন গ্রুপ</span>
                 </button>
-              </div>
+              )}
+            </div>
 
-              {customGroups.length === 0 ? (
-                <div className="p-3 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl text-center space-y-1.5">
-                  <p className="text-[11px] text-slate-400">কোনো কাস্টম মেসেঞ্জার গ্রুপ নেই</p>
+            {filteredOfficeGroups.length === 0 ? (
+              <div className="p-4 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl text-center space-y-1.5">
+                <p className="text-xs text-slate-400">কোনো কাজের গ্রুপ পাওয়া যায়নি</p>
+                {isAdmin && (
                   <button
                     type="button"
                     onClick={() => setIsCreateGroupOpen(true)}
-                    className="text-xs text-blue-400 hover:text-blue-300 font-bold underline inline-flex items-center gap-1"
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline inline-flex items-center gap-1"
                   >
                     <FolderPlus className="w-3.5 h-3.5" />
                     নতুন গ্রুপ তৈরি করুন
                   </button>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {customGroups.map((group) => {
-                    const isActive = activeRoom === group.id;
-                    const memberCount = (group.members || [group.createdBy || username]).length;
-                    const groupAvatar = group.customAvatarUrl || group.avatarUrl;
-                    return (
-                      <div
-                        key={group.id}
-                        onClick={() => handleSelectRoom(group.id)}
-                        className={`w-full text-left flex items-center justify-between gap-2.5 p-2.5 rounded-2xl transition duration-150 cursor-pointer group/grp ${
-                          isActive
-                            ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-600/20'
-                            : 'text-slate-300 hover:bg-slate-900 hover:text-white'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 truncate min-w-0">
-                          {groupAvatar ? (
-                            <img
-                              src={groupAvatar}
-                              alt={group.name}
-                              className="w-10 h-10 rounded-2xl object-cover border border-indigo-500/30 flex-shrink-0 shadow-sm"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-2xl bg-indigo-950/80 border border-indigo-500/30 flex items-center justify-center text-lg flex-shrink-0 shadow-sm">
-                              {group.emoji || '💬'}
-                            </div>
-                          )}
-                          <div className="truncate">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold truncate">{group.name}</p>
-                              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-indigo-300'}`}>
-                                {memberCount} জন
-                              </span>
-                            </div>
-                            <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
-                              {group.desc}
-                            </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {filteredOfficeGroups.map((group) => {
+                  const isActive = activeRoom === group.id;
+                  const memberCount = (group.members || []).length;
+                  const groupAvatar = group.customAvatarUrl || group.avatarUrl;
+                  return (
+                    <div
+                      key={group.id}
+                      onClick={() => handleSelectRoom(group.id)}
+                      className={`w-full text-left flex items-center justify-between gap-2.5 p-2.5 rounded-2xl transition duration-150 cursor-pointer group/grp ${
+                        isActive
+                          ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-600/25'
+                          : 'text-slate-300 hover:bg-slate-900 hover:text-white border border-transparent hover:border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate min-w-0">
+                        {groupAvatar ? (
+                          <img
+                            src={groupAvatar}
+                            alt={group.name}
+                            className="w-10 h-10 rounded-2xl object-cover border border-indigo-500/30 flex-shrink-0 shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-950/80 border border-indigo-500/30 flex items-center justify-center text-lg flex-shrink-0 shadow-sm">
+                            {group.emoji || '💼'}
                           </div>
+                        )}
+                        <div className="truncate">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold truncate">{group.name}</p>
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-indigo-300'}`}>
+                              {group.members && group.members.includes('ALL') ? 'সবাই' : `${memberCount} জন`}
+                            </span>
+                          </div>
+                          <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}`}>
+                            {group.desc}
+                          </p>
                         </div>
-                        
-                        {/* Group Actions: Edit & Delete */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover/grp:opacity-100 transition flex-shrink-0">
+                      </div>
+                      
+                      {/* Admin Group Controls */}
+                      {isAdmin && (
+                        <div className="flex items-center gap-1 opacity-80 group-hover/grp:opacity-100 transition flex-shrink-0">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -2287,90 +2316,178 @@ export default function Home() {
                               handleOpenEditGroup(group);
                             }}
                             className="text-slate-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-slate-950/60 transition"
-                            title="গ্রুপ সম্পাদনা, এভারটার ও মেম্বার সেটিংস"
+                            title="গ্রুপ সম্পাদনা ও মেম্বার তালিকা"
                           >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleDeleteCustomGroup(group.id, e)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`আপনি কি "${group.name}" গ্রুপটি ডিলিট করতে চান?`)) {
+                                handleDeleteCustomGroup(group.id, e);
+                              }
+                            }}
                             className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-950/60 transition"
                             title="গ্রুপ ডিলিট করুন"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Public Channels List */}
-          {(sidebarTab === 'all' || sidebarTab === 'groups') && (
-            <div className="pt-2 border-t border-slate-800/80">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2 mb-2 flex items-center justify-between">
-                <span>পাবলিক চ্যানেলসমূহ</span>
-                <span className="text-[10px] font-mono text-slate-500">{CHANNELS.length} টি</span>
-              </h4>
-              <div className="space-y-1">
-                {CHANNELS.map((channel) => {
-                  const isActive = activeRoom === channel.id;
-                  const isForbidden = (channel.minRole === 'admin' && !isAdmin) || (channel.minRole === 'moderator' && !isModerator);
-                  return (
-                    <button
-                      key={channel.id}
-                      onClick={() => handleSelectRoom(channel.id)}
-                      className={`w-full text-left flex items-center gap-2.5 p-2.5 rounded-2xl transition duration-150 relative group ${
-                        isActive
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/15'
-                          : isForbidden
-                          ? 'text-slate-500 bg-slate-950/50 hover:bg-slate-900/80 border border-slate-800/60'
-                          : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                      }`}
-                    >
-                      <div className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center relative flex-shrink-0">
-                        <Hash className={`w-4 h-4 ${isActive ? 'text-white' : isForbidden ? 'text-slate-600' : 'text-slate-400'}`} />
-                        {isForbidden && (
-                          <Shield className="w-3 h-3 text-amber-500 absolute -bottom-1 -right-1 bg-slate-950 rounded-full p-0.5" />
-                        )}
-                      </div>
-                      <div className="truncate flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <p className="text-xs font-bold truncate">{channel.name}</p>
-                          {channel.minRole === 'admin' && (
-                            <span className="text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded-full shrink-0">
-                              অ্যাডমিন
-                            </span>
-                          )}
-                          {channel.minRole === 'moderator' && (
-                            <span className="text-[9px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 rounded-full shrink-0">
-                              মডারেটর+
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
-                          {channel.desc}
-                        </p>
-                      </div>
-                    </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Quick Realtime Messenger Tip */}
-          <div className="bg-gradient-to-br from-blue-950/40 to-slate-900/60 border border-blue-900/30 rounded-2xl p-3 text-xs text-slate-400 space-y-1.5">
-            <h5 className="font-bold text-blue-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-              রিয়েল-টাইম মেসেঞ্জার
-            </h5>
-            <p className="leading-relaxed text-[11px]">
-              আরেকটি ট্যাব খুলে চ্যাট করুন—তাৎক্ষণিক মেসেজ, সাউন্ড ও অনলাইন উপস্থিতি লাইভ দেখতে পাবেন!
-            </p>
+          {/* Section 2: Office Registered Members & Direct Chat */}
+          <div className="pt-3 border-t border-slate-800/80">
+            <div className="flex items-center justify-between px-1 mb-2.5">
+              <div>
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>অফিস মেম্বারগণ ({filteredOfficeMembers.length})</span>
+                </h4>
+                <p className="text-[10px] text-slate-500 mt-0.5">শুধুমাত্র লগইনকৃত অফিস মেম্বার</p>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                অফিস টিম
+              </span>
+            </div>
+
+            {filteredOfficeMembers.length === 0 ? (
+              <div className="p-4 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl text-center">
+                <p className="text-xs text-slate-400">কোনো মেম্বার খুঁজে পাওয়া যায়নি</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {filteredOfficeMembers.map((usr) => {
+                  const isSelf = usr.email?.toLowerCase() === user?.email?.toLowerCase() || usr.name === username;
+                  const isUserOnline = !!onlineUsers[usr.name] || isSelf;
+                  const isChiefAdmin = usr.email?.toLowerCase() === 'redgreenonline2023@gmail.com';
+                  const userDMId = !isSelf ? getDMRoomId(username, usr.name || usr.email) : null;
+                  const isCurrentDM = activeRoom === userDMId;
+
+                  return (
+                    <div
+                      key={usr.id || usr.email}
+                      onClick={() => {
+                        if (!isSelf) handleStartDirectMessage(usr);
+                      }}
+                      className={`w-full text-left flex items-center justify-between gap-2.5 p-2.5 rounded-2xl transition duration-150 border ${
+                        isCurrentDM
+                          ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20'
+                          : isDarkMode
+                          ? 'bg-slate-900/40 border-slate-800/80 hover:bg-slate-800/80 text-slate-300'
+                          : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-800 shadow-sm'
+                      } ${!isSelf ? 'cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate min-w-0">
+                        {/* Avatar with Online Indicator */}
+                        <div className="relative flex-shrink-0">
+                          {usr.custom_avatar_url ? (
+                            <img
+                              src={usr.custom_avatar_url}
+                              alt={usr.name}
+                              className="w-10 h-10 rounded-full object-cover border border-slate-700 shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-base shadow-sm">
+                              {usr.avatar_emoji || (isChiefAdmin ? '👑' : '👤')}
+                            </div>
+                          )}
+                          <span
+                            className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-slate-950 ${
+                              isUserOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'
+                            }`}
+                            title={isUserOnline ? 'অনলাইন' : 'অফলাইন'}
+                          />
+                        </div>
+
+                        {/* Name, Role & Email */}
+                        <div className="truncate">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold truncate">
+                              {usr.name}
+                              {isSelf && <span className="text-[10px] text-blue-300 ml-1 font-normal">(আপনি)</span>}
+                            </p>
+                          </div>
+                          
+                          {/* Role Tag */}
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {isChiefAdmin ? (
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded-full font-semibold flex items-center gap-0.5">
+                                <Crown className="w-2.5 h-2.5" /> অ্যাডমিন ও ডেভেলপার
+                              </span>
+                            ) : (
+                              <span className={`text-[10px] truncate ${isCurrentDM ? 'text-blue-100' : 'text-slate-400'}`}>
+                                {usr.role || 'অফিস মেম্বার'}
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-[9px] font-mono truncate ${isCurrentDM ? 'text-blue-200' : 'text-slate-500'}`}>
+                            {usr.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right Action Buttons */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Direct Chat Button */}
+                        {!isSelf && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartDirectMessage(usr);
+                            }}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition active:scale-95 flex items-center gap-1 ${
+                              isCurrentDM
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30'
+                            }`}
+                            title={`${usr.name} এর সাথে চ্যাট করুন`}
+                          >
+                            <MessageSquare className="w-3 h-3" />
+                            <span>{isCurrentDM ? 'সক্রিয়' : 'চ্যাট'}</span>
+                          </button>
+                        )}
+
+                        {/* Admin Controls: Edit Profile & Remove Member */}
+                        {isAdmin && !isSelf && !isChiefAdmin && (
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAdminEditUser({ ...usr });
+                              }}
+                              className="p-1 text-slate-400 hover:text-indigo-300 hover:bg-slate-800 rounded-lg transition"
+                              title="মেম্বার প্রোফাইল ও পদবী নিয়ন্ত্রণ (অ্যাডমিন)"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAdminRemoveUser({ ...usr });
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                              title="সম্পূর্ণ অ্যাপ থেকে এই মেম্বারকে রিমুভ করুন (অ্যাডমিন)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2583,6 +2700,64 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        {/* Background Messenger Push Notification Status Bar */}
+        <div className={`px-4 py-1.5 border-b text-xs flex flex-wrap items-center justify-between gap-2 transition-colors duration-200 z-10 ${
+          isDarkMode ? 'bg-slate-950/60 border-slate-800/80 text-slate-300' : 'bg-indigo-50/70 border-indigo-100 text-slate-700'
+        }`}>
+          <div className="flex items-center gap-2 min-w-0">
+            {isPushSubscribed ? (
+              <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="truncate">
+                  ব্যাকগ্রাউন্ড মেসেঞ্জার সক্রিয় (অ্যাপ বন্ধ থাকলেও মোবাইলে নোটিফিকেশন যাবে)
+                </span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-amber-400 font-medium">
+                <Bell className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+                <span className="truncate">
+                  অ্যাপ বন্ধ থাকা অবস্থায় মোবাইলে নোটিফিকেশন পেতে পুশ সার্ভিস অন করুন
+                </span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {pushStatusMessage && (
+              <span className="text-[11px] text-indigo-400 font-medium bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md animate-pulse">
+                {pushStatusMessage}
+              </span>
+            )}
+
+            {!isPushSubscribed ? (
+              <button
+                type="button"
+                onClick={handleEnablePushNotifications}
+                disabled={isPushRegistering}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] px-2.5 py-1 rounded-lg shadow-sm transition flex items-center gap-1 active:scale-95 disabled:opacity-50"
+              >
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>{isPushRegistering ? 'চালু হচ্ছে...' : 'নোটিফিকেশন অন করুন'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSendTestPush}
+                disabled={isSendingTestPush}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-[11px] px-2 py-0.5 rounded-lg transition flex items-center gap-1 active:scale-95 disabled:opacity-50"
+                title="আপনার ডিভাইসে টেস্ট পুশ নোটিফিকেশন পাঠান"
+              >
+                <Smartphone className="w-3 h-3 text-emerald-400" />
+                <span>{isSendingTestPush ? 'পাঠানো হচ্ছে...' : '🔔 টেস্ট পুশ পাঠান'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
 
         {/* Pinned Messages Banner */}
         {pinnedMessages.length > 0 && (

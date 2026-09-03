@@ -309,7 +309,7 @@ self.addEventListener('message', (event) => {
 // Push Notifications (Server push events)
 // -------------------------------------------------------------
 self.addEventListener('push', (event) => {
-  let data = { title: 'rgomassenger', body: 'নতুন একটি বার্তা এসেছে' };
+  let data = { title: '💬 Rgomassenger', body: 'নতুন একটি বার্তা এসেছে' };
   
   if (event.data) {
     try {
@@ -320,22 +320,49 @@ self.addEventListener('push', (event) => {
   }
 
   const isAlarm = data.isAlarm || (data.title && data.title.includes('অ্যালার্ম'));
+  const isMessage = data.room || (data.title && data.title.includes('বার্তা')) || (data.title && data.title.includes('গ্রুপ'));
 
   const options = {
-    body: data.body || 'নতুন নোটিফিকেশন এসেছে',
-    icon: '/icon-192.png',
+    body: data.body || 'নতুন মেসেজ এসেছে',
+    icon: data.icon || '/icon-192.png',
     badge: '/icon-192.png',
-    vibrate: isAlarm ? [500, 150, 500, 150, 500, 150, 800] : [200, 100, 200],
+    vibrate: isAlarm
+      ? [500, 150, 500, 150, 500, 150, 800]
+      : [250, 100, 250, 100, 250], // Messenger-style distinctive double vibration
     data: {
-      url: data.url || (isAlarm ? '/tasks' : '/')
+      url: data.url || (data.room ? `/?room=${encodeURIComponent(data.room)}` : (isAlarm ? '/tasks' : '/')),
+      room: data.room || 'general',
+      sender: data.sender || '',
+      isAlarm: !!isAlarm,
+      isMessage: !!isMessage
     },
-    tag: isAlarm ? 'task-alarm-' + Date.now() : 'messenger-msg-' + Date.now(),
+    tag: isAlarm ? `task-alarm-${Date.now()}` : (data.room ? `msg-${data.room}` : `messenger-msg-${Date.now()}`),
     renotify: true,
-    requireInteraction: !!isAlarm
+    requireInteraction: true,
+    actions: isAlarm
+      ? [
+          { action: 'view_task', title: '🔍 টাস্ক দেখুন' },
+          { action: 'dismiss', title: '❌ বন্ধ' }
+        ]
+      : [
+          { action: 'open_chat', title: '💬 মেসেজে যান' },
+          { action: 'dismiss', title: '❌ বন্ধ' }
+        ]
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'মেসেঞ্জার নোটিফিকেশন', options)
+    self.registration.showNotification(data.title || 'মেসেঞ্জার নোটিফিকেশন', options).then(async () => {
+      // Broadcast to any open or background clients so sound can play
+      try {
+        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clientList) {
+          client.postMessage({
+            type: 'PUSH_MESSAGE_RECEIVED',
+            payload: data
+          });
+        }
+      } catch (e) {}
+    })
   );
 });
 
@@ -347,7 +374,7 @@ self.addEventListener('notificationclick', (event) => {
 
   const action = event.action;
   const notifData = event.notification.data || {};
-  const targetUrl = notifData.url || '/tasks';
+  const targetUrl = notifData.url || '/';
 
   if (action === 'dismiss') {
     return;
@@ -365,10 +392,13 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
 
-      // Check if there is already a window open
+      // Check if there is already a window open with app
       for (const client of clientList) {
         if ('focus' in client) {
-          if (client.url && client.url.includes(targetUrl)) {
+          if (client.url && (client.url.includes(targetUrl) || client.url.includes('/?room='))) {
+            if (client.navigate && targetUrl && !client.url.endsWith(targetUrl)) {
+              await client.navigate(targetUrl);
+            }
             return client.focus();
           } else if (client.navigate) {
             await client.navigate(targetUrl);
@@ -377,13 +407,14 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
 
-      // If no window is open, open a new window
+      // If no window is open, open a new window directly to the chat
       if (self.clients.openWindow) {
         return self.clients.openWindow(targetUrl);
       }
     })
   );
 });
+
 
 // Start scheduler immediately on load
 scheduleNextAlarmCheck();

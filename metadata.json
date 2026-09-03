@@ -3,7 +3,8 @@
   "description": "Real-time Messenger & Task Alert system featuring personal and group chatting, voice notes, audio/video call simulation, and scheduled sound alarms.",
   "requestFramePermissions": [
     "camera",
-    "microphone"
+    "microphone",
+    "notifications"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

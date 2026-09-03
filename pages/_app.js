@@ -6,6 +6,7 @@ import GlobalNotificationListener from '../components/GlobalNotificationListener
 import AuthGuard from '../components/AuthGuard';
 import DashboardLayout from '../components/DashboardLayout';
 import { setupServiceWorkerAlarmListener, registerBackgroundSync } from '../utils/alarmScheduler';
+import { registerPushNotifications } from '../utils/pushManager';
 import { appwrite as supabase } from '../lib/appwrite';
 import '../styles/globals.css';
 
@@ -17,6 +18,14 @@ function MyApp({ Component, pageProps }) {
         .register('/sw.js')
         .then((reg) => {
           registerBackgroundSync();
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            const myUser = localStorage.getItem('rg_username') || '';
+            const myEmail = localStorage.getItem('rg_email') || '';
+            const myRole = localStorage.getItem('rg_user_role') || '';
+            if (myUser) {
+              registerPushNotifications(myUser, myEmail, myRole).catch(() => {});
+            }
+          }
         })
         .catch((err) => {
           console.warn('Service Worker registration failed:', err);

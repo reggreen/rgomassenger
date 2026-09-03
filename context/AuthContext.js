@@ -6,19 +6,75 @@ const AuthContext = createContext();
 export const DEFAULT_ADMIN_ACCOUNT = {
   id: 'usr_admin_01',
   name: 'MD SHANTO',
+  nickname: 'Shanto',
   email: 'redgreenonline2023@gmail.com',
-  role: 'অ্যাডমিন / কমিউনিটি প্রধান',
+  role: 'অ্যাপ ডেভলপার ও চিফ অ্যাডমিন',
+  status: 'সিস্টেম মেইন্টেন্যান্স ও অ্যাক্টিভ ⚡',
+  presence: 'online',
   avatar_emoji: '🧑‍💻',
   phone: '+880 1700-000000',
-  bio: 'rgomassenger কমিউনিটির প্রধান সিস্টেম অ্যাডমিন।'
+  bio: 'অফিস মেসেঞ্জারের ডেভলপার ও চিফ অ্যাডমিন।'
 };
 
-export const DEMO_ACCOUNTS = [DEFAULT_ADMIN_ACCOUNT];
+export const DEFAULT_REGISTERED_USERS = [
+  DEFAULT_ADMIN_ACCOUNT,
+  {
+    id: 'usr_mem_tanveer',
+    name: 'তানভীর আহমেদ',
+    nickname: 'তানভীর',
+    email: 'tanveer.office@gmail.com',
+    role: 'মডারেটর / টিম লিড',
+    status: 'কাজের ডেস্কে আছি 📋',
+    presence: 'online',
+    avatar_emoji: '👨‍💼',
+    phone: '+880 1711-223344',
+    bio: 'অপারেশনস টিম লিড ও মেসেঞ্জার মডারেটর। প্রতিদিনের অফিস রুটিন সমন্বয়ক।'
+  },
+  {
+    id: 'usr_mem_nusrat',
+    name: 'নুসরাত জাহান',
+    nickname: 'নুসরাত',
+    email: 'nusrat.creative@gmail.com',
+    role: 'ডিজাইনার ও ক্রিয়েটিভ',
+    status: 'নতুন ইউআই প্রোটোটাইপিং 🎨',
+    presence: 'away',
+    avatar_emoji: '👩‍🎨',
+    phone: '+880 1722-334455',
+    bio: 'ইউআই/ইউএক্স ডিজাইনার এবং ব্র্যান্ড এসেট স্পেশালিস্ট।'
+  },
+  {
+    id: 'usr_mem_shahin',
+    name: 'শাহিনুর রহমান',
+    nickname: 'শাহিন',
+    email: 'shahin.dev@gmail.com',
+    role: 'সফটওয়্যার ইঞ্জিনিয়ার',
+    status: 'বাগ ফিক্সিং ও ডেভলপমেন্ট মোড 🚀',
+    presence: 'busy',
+    avatar_emoji: '🧑‍💻',
+    phone: '+880 1733-445566',
+    bio: 'ফুল-স্ট্যাক ওয়েব ডেভেলপার এবং সিস্টেম আর্কিটেক্ট।'
+  }
+];
+
+export const DEMO_ACCOUNTS = DEFAULT_REGISTERED_USERS;
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appLogo, setAppLogo] = useState(null);
+
+  // Check if an email has been removed/banned by Admin
+  const isEmailRemoved = (email) => {
+    if (!email || typeof window === 'undefined') return false;
+    const removedList = localStorage.getItem('rg_removed_users');
+    if (!removedList) return false;
+    try {
+      const parsed = JSON.parse(removedList);
+      return parsed.some(e => String(e).toLowerCase() === email.toLowerCase());
+    } catch {
+      return false;
+    }
+  };
 
   // Initialize auth state and app logo
   useEffect(() => {
@@ -49,13 +105,13 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Sync user profile to storage and Supabase profiles table
+  // Sync user profile to storage and Supabase/Appwrite profiles table
   const saveRegisteredUser = async (userObj) => {
     if (!userObj || !userObj.email) return;
     try {
       // Security Enforcement: Only official owner email can be assigned default Admin
       const isOwner = userObj.email.toLowerCase() === 'redgreenonline2023@gmail.com';
-      const safeRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (userObj.role || 'কমিউনিটি সদস্য');
+      const safeRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (userObj.role || 'অফিস মেম্বার');
       const safeUserObj = { ...userObj, role: safeRole };
 
       if (typeof window !== 'undefined') {
@@ -72,14 +128,16 @@ export function AuthProvider({ children }) {
         localStorage.setItem('rg_all_users', JSON.stringify(users));
       }
 
-      // Sync to Appwrite profiles
+      // Sync to Appwrite/Supabase profiles
       const { appwrite } = await import('../lib/appwrite');
       await appwrite.from('profiles').upsert([{
         id: userObj.id,
         name: userObj.name,
         email: userObj.email,
         role: safeRole,
-        avatar_emoji: userObj.avatar_emoji || '🧑‍💻'
+        avatar_emoji: userObj.avatar_emoji || '🧑‍💻',
+        phone: userObj.phone || '',
+        bio: userObj.bio || ''
       }], { onConflict: 'email' });
     } catch (err) {
       console.warn('Profile sync notice:', err);
@@ -94,12 +152,17 @@ export function AuthProvider({ children }) {
         try {
           const appwriteUser = await account.get();
           if (appwriteUser) {
+            if (isEmailRemoved(appwriteUser.email)) {
+              await logout();
+              return;
+            }
+            const isOwner = appwriteUser.email.toLowerCase() === 'redgreenonline2023@gmail.com';
             const mappedUser = {
               id: appwriteUser.$id,
-              name: appwriteUser.name || 'ইউজার',
+              name: appwriteUser.name || (isOwner ? DEFAULT_ADMIN_ACCOUNT.name : 'অফিস মেম্বার'),
               email: appwriteUser.email,
-              role: 'ভেরিফাইড ইউজার',
-              avatar_emoji: '🧑‍💻',
+              role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
+              avatar_emoji: isOwner ? '🧑‍💻' : '👤',
               loggedIn: true
             };
             setUser(mappedUser);
@@ -119,6 +182,10 @@ export function AuthProvider({ children }) {
         if (storedUser) {
           try {
             const parsed = JSON.parse(storedUser);
+            if (isEmailRemoved(parsed.email)) {
+              await logout();
+              return;
+            }
             setUser({ ...parsed, loggedIn: true });
             setLoading(false);
             return;
@@ -128,7 +195,7 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // 3. Unauthenticated default (User must log in via Login Modal / Login Page)
+      // 3. Unauthenticated default
       setUser(null);
     } catch (err) {
       console.error('Auth check error:', err);
@@ -142,39 +209,66 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setLoading(true);
     try {
+      const cleanEmail = (email || '').trim().toLowerCase();
+      if (!cleanEmail) {
+        setLoading(false);
+        return { success: false, message: 'অনুগ্রহ করে ইমেইল লিখুন।' };
+      }
+
+      if (isEmailRemoved(cleanEmail)) {
+        setLoading(false);
+        return { success: false, message: 'আপনার অ্যাকাউন্টটি অফিস অ্যাডমিন কর্তৃক রিমুভ করা হয়েছে। প্রবেশাধিকার নেই।' };
+      }
+
       // 1. Try Appwrite Authentication
       if (isAppwriteConfigured) {
         try {
-          // Delete old session if any
           try { await account.deleteSession('current'); } catch (e) {}
-          await account.createEmailPasswordSession(email, password);
+          await account.createEmailPasswordSession(cleanEmail, password);
           const appwriteUser = await account.get();
+          const isOwner = appwriteUser.email.toLowerCase() === 'redgreenonline2023@gmail.com';
           const loggedUser = {
             id: appwriteUser.$id,
-            name: appwriteUser.name || email.split('@')[0],
+            name: appwriteUser.name || (isOwner ? DEFAULT_ADMIN_ACCOUNT.name : cleanEmail.split('@')[0]),
             email: appwriteUser.email,
-            role: 'ভেরিফাইড ইউজার',
-            avatar_emoji: '🧑‍💻',
+            role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
+            avatar_emoji: isOwner ? '🧑‍💻' : '👤',
             loggedIn: true
           };
           setUser(loggedUser);
           localStorage.setItem('rg_current_user', JSON.stringify(loggedUser));
           localStorage.setItem('rg_username', loggedUser.name);
+          await saveRegisteredUser(loggedUser);
           setLoading(false);
-          return { success: true, message: 'সফলভাবে লগইন হয়েছে (Appwrite Auth)' };
+          return { success: true, message: 'সফলভাবে লগইন হয়েছে' };
         } catch (err) {
           console.warn('Appwrite auth error, using standard auth handler:', err);
         }
       }
 
-      // 2. Local Auth Handler / Demo Account Matching
-      const isOwner = email.toLowerCase() === 'redgreenonline2023@gmail.com';
+      // 2. Local Auth Handler / Registered Matching
+      const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+      
+      // Check existing user profile
+      let existingProfile = null;
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('rg_all_users');
+        if (stored) {
+          try {
+            const users = JSON.parse(stored);
+            existingProfile = users.find(u => u.email?.toLowerCase() === cleanEmail);
+          } catch (e) {}
+        }
+      }
+
       const loggedUser = {
-        id: isOwner ? DEFAULT_ADMIN_ACCOUNT.id : 'usr_' + Math.random().toString(36).substr(2, 8),
-        name: isOwner ? DEFAULT_ADMIN_ACCOUNT.name : email.split('@')[0].toUpperCase(),
-        email: email,
-        role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'কমিউনিটি সদস্য',
-        avatar_emoji: isOwner ? '🧑‍💻' : '🚀',
+        id: isOwner ? DEFAULT_ADMIN_ACCOUNT.id : (existingProfile?.id || 'usr_' + Math.random().toString(36).substr(2, 8)),
+        name: isOwner ? DEFAULT_ADMIN_ACCOUNT.name : (existingProfile?.name || cleanEmail.split('@')[0].toUpperCase()),
+        email: cleanEmail,
+        role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (existingProfile?.role || 'অফিস মেম্বার'),
+        avatar_emoji: isOwner ? '🧑‍💻' : (existingProfile?.avatar_emoji || '👤'),
+        phone: existingProfile?.phone || '',
+        bio: existingProfile?.bio || '',
         loggedIn: true
       };
 
@@ -196,10 +290,10 @@ export function AuthProvider({ children }) {
     const roleStr = (user.role || '').toLowerCase();
     const emailStr = (user.email || '').toLowerCase();
 
-    if (roleStr.includes('অ্যাডমিন') || roleStr.includes('admin') || emailStr === 'redgreenonline2023@gmail.com') {
+    if (roleStr.includes('অ্যাডমিন') || roleStr.includes('admin') || roleStr.includes('ডেভলপার') || emailStr === 'redgreenonline2023@gmail.com') {
       return 'admin';
     }
-    if (roleStr.includes('মডারেটর') || roleStr.includes('moderator') || emailStr.includes('.mod@')) {
+    if (roleStr.includes('মডারেটর') || roleStr.includes('moderator')) {
       return 'moderator';
     }
     return 'member';
@@ -213,22 +307,36 @@ export function AuthProvider({ children }) {
   const register = async (name, email, password) => {
     setLoading(true);
     try {
+      const cleanEmail = (email || '').trim().toLowerCase();
+      if (!cleanEmail) {
+        setLoading(false);
+        return { success: false, message: 'অনুগ্রহ করে ইমেইল প্রদান করুন।' };
+      }
+
+      if (isEmailRemoved(cleanEmail)) {
+        setLoading(false);
+        return { success: false, message: 'আপনার অ্যাকাউন্টটি অফিস অ্যাডমিন কর্তৃক রিমুভ করা হয়েছে।' };
+      }
+
+      const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+
       if (isAppwriteConfigured) {
         try {
-          await account.create(ID.unique(), email, password, name);
-          await account.createEmailPasswordSession(email, password);
+          await account.create(ID.unique(), cleanEmail, password, name);
+          await account.createEmailPasswordSession(cleanEmail, password);
           const appwriteUser = await account.get();
           const newUser = {
             id: appwriteUser.$id,
             name: name,
-            email: email,
-            role: 'নতুন সদস্য',
-            avatar_emoji: '🧑‍💻',
+            email: cleanEmail,
+            role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
+            avatar_emoji: isOwner ? '🧑‍💻' : '👤',
             loggedIn: true
           };
           setUser(newUser);
           localStorage.setItem('rg_current_user', JSON.stringify(newUser));
           localStorage.setItem('rg_username', newUser.name);
+          await saveRegisteredUser(newUser);
           setLoading(false);
           return { success: true, message: 'সফলভাবে রেজিস্ট্রেশন ও লগইন সম্পন্ন হয়েছে!' };
         } catch (err) {
@@ -238,13 +346,13 @@ export function AuthProvider({ children }) {
 
       // Local Register
       const newUser = {
-        id: 'usr_' + Math.random().toString(36).substr(2, 8),
+        id: isOwner ? DEFAULT_ADMIN_ACCOUNT.id : 'usr_' + Math.random().toString(36).substr(2, 8),
         name: name,
-        email: email,
-        role: 'নতুন সদস্য',
-        avatar_emoji: '🧑‍💻',
-        phone: '+880 1700-000000',
-        bio: 'rgomassenger এ স্বাগতম!',
+        email: cleanEmail,
+        role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
+        avatar_emoji: isOwner ? '🧑‍💻' : '👤',
+        phone: '',
+        bio: 'অফিস মেম্বার',
         loggedIn: true
       };
 
@@ -260,23 +368,30 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Demo Login (1-click)
+  // Demo Login (Quick Office Admin Login)
   const demoLogin = (accountType = 'admin') => {
     let target = DEFAULT_ADMIN_ACCOUNT;
-    if (accountType === 'moderator') {
-      target = { ...DEFAULT_ADMIN_ACCOUNT, id: 'usr_mod_demo', name: 'মডারেটর (টেস্ট)', role: 'মডারেটর', avatar_emoji: '🦁' };
-    } else if (accountType === 'member') {
-      target = { ...DEFAULT_ADMIN_ACCOUNT, id: 'usr_mem_demo', name: 'মেম্বার (টেস্ট)', role: 'কমিউনিটি মেম্বার', avatar_emoji: '🚀' };
+    if (accountType === 'member') {
+      target = { 
+        id: 'usr_office_member_01', 
+        name: 'তানভীর আহমেদ', 
+        email: 'tanveer.office@gmail.com', 
+        role: 'অফিস মেম্বার', 
+        avatar_emoji: '👨‍💼',
+        phone: '+880 1711-223344',
+        bio: 'অফিস টিম মেম্বার'
+      };
     }
 
     const loggedUser = { ...target, loggedIn: true };
     setUser(loggedUser);
     localStorage.setItem('rg_current_user', JSON.stringify(loggedUser));
     localStorage.setItem('rg_username', loggedUser.name);
+    saveRegisteredUser(loggedUser);
     return { success: true, message: `${loggedUser.name} হিসেবে লগইন সম্পন্ন!` };
   };
 
-  // Get Registered Users List
+  // Get Registered Users List (Office Members Directory)
   const getRegisteredUsers = async () => {
     try {
       let localList = [];
@@ -292,18 +407,24 @@ export function AuthProvider({ children }) {
       const { data: remoteProfiles } = await appwrite.from('profiles').select('*');
 
       const combinedMap = new Map();
-      // Add default admin account
-      combinedMap.set(DEFAULT_ADMIN_ACCOUNT.email.toLowerCase(), DEFAULT_ADMIN_ACCOUNT);
+      // Always include Default Registered Users (including Developer/Chief Admin)
+      DEFAULT_REGISTERED_USERS.forEach(u => {
+        if (u && u.email && !isEmailRemoved(u.email)) {
+          combinedMap.set(u.email.toLowerCase(), u);
+        }
+      });
 
       if (localList && Array.isArray(localList)) {
         localList.forEach(u => {
-          if (u && u.email) combinedMap.set(u.email.toLowerCase(), u);
+          if (u && u.email && !isEmailRemoved(u.email)) {
+            combinedMap.set(u.email.toLowerCase(), u);
+          }
         });
       }
 
       if (remoteProfiles && Array.isArray(remoteProfiles)) {
         remoteProfiles.forEach(rp => {
-          if (rp && rp.email) {
+          if (rp && rp.email && !isEmailRemoved(rp.email)) {
             const existing = combinedMap.get(rp.email.toLowerCase()) || {};
             combinedMap.set(rp.email.toLowerCase(), { ...existing, ...rp });
           }
@@ -317,16 +438,44 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Delete User
-  const deleteUser = async (userId, userEmail) => {
+  // Remove Member Completely from the Entire App (Admin Exclusive)
+  const removeMemberFromApp = async (userId, userEmail) => {
     try {
-      // 1. Remove from localStorage rg_all_users
+      if (!userEmail) return { success: false, message: 'ইউজার ইমেইল পাওয়া যায়নি।' };
+      
+      const cleanEmail = userEmail.toLowerCase();
+      if (cleanEmail === 'redgreenonline2023@gmail.com') {
+        return { success: false, message: 'প্রধান ডেভলপার ও চিফ অ্যাডমিন অ্যাকাউন্ট রিমুভ করা যাবে না।' };
+      }
+
+      // 1. Add to blacklist / removed list in localStorage
       if (typeof window !== 'undefined') {
+        const currentRemoved = localStorage.getItem('rg_removed_users');
+        let removedArray = currentRemoved ? JSON.parse(currentRemoved) : [];
+        if (!removedArray.includes(cleanEmail)) {
+          removedArray.push(cleanEmail);
+          localStorage.setItem('rg_removed_users', JSON.stringify(removedArray));
+        }
+
+        // Remove from rg_all_users
         const stored = localStorage.getItem('rg_all_users');
         if (stored) {
           let users = JSON.parse(stored);
-          users = users.filter(u => u.id !== userId && u.email?.toLowerCase() !== userEmail?.toLowerCase());
+          users = users.filter(u => u.id !== userId && u.email?.toLowerCase() !== cleanEmail);
           localStorage.setItem('rg_all_users', JSON.stringify(users));
+        }
+
+        // Remove from all custom groups
+        const storedGroups = localStorage.getItem('rg_custom_groups');
+        if (storedGroups) {
+          try {
+            let groups = JSON.parse(storedGroups);
+            groups = groups.map(g => ({
+              ...g,
+              members: (g.members || []).filter(m => m.toLowerCase() !== cleanEmail)
+            }));
+            localStorage.setItem('rg_custom_groups', JSON.stringify(groups));
+          } catch (e) {}
         }
       }
 
@@ -335,57 +484,83 @@ export function AuthProvider({ children }) {
       if (userId) {
         await appwrite.from('profiles').delete().eq('id', userId);
       }
-      if (userEmail) {
-        await appwrite.from('profiles').delete().eq('email', userEmail);
-      }
+      await appwrite.from('profiles').delete().eq('email', cleanEmail);
 
-      // 3. If deleting current logged-in user, logout
-      if (user && (user.id === userId || user.email?.toLowerCase() === userEmail?.toLowerCase())) {
+      // 3. If removing currently logged-in user, force logout
+      if (user && (user.id === userId || user.email?.toLowerCase() === cleanEmail)) {
         await logout();
       }
 
-      return { success: true, message: 'ইউজার সফলভাবে প্ল্যাটফর্ম থেকে মুছে ফেলা হয়েছে।' };
+      // 4. Dispatch custom event for real-time notification
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rg_member_removed', { detail: { email: cleanEmail, id: userId } }));
+      }
+
+      return { success: true, message: `${userEmail} কে সম্পূর্ণ অফিস অ্যাপ থেকে রিমুভ করা হয়েছে।` };
     } catch (err) {
-      console.error('Delete user error:', err);
-      return { success: false, message: 'ইউজার মুছতে সমস্যা হয়েছে' };
+      console.error('Remove member error:', err);
+      return { success: false, message: 'মেম্বার রিমুভ করতে সমস্যা হয়েছে' };
     }
+  };
+
+  // Admin Full Profile Update (Admin can edit any member's profile)
+  const adminUpdateUserProfile = async (userId, userEmail, updatedFields) => {
+    try {
+      const cleanEmail = (userEmail || '').toLowerCase();
+      if (!cleanEmail) return { success: false, message: 'ইমেইল আবশ্যক' };
+
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('rg_all_users');
+        let users = stored ? JSON.parse(stored) : [...DEFAULT_REGISTERED_USERS];
+        let found = false;
+        users = users.map(u => {
+          if (u.id === userId || u.email?.toLowerCase() === cleanEmail) {
+            found = true;
+            return { ...u, ...updatedFields };
+          }
+          return u;
+        });
+        if (!found) {
+          const matchedDefault = DEFAULT_REGISTERED_USERS.find(u => u.email?.toLowerCase() === cleanEmail) || {};
+          users.push({ ...matchedDefault, id: userId || 'usr_' + Date.now(), email: cleanEmail, ...updatedFields });
+        }
+        localStorage.setItem('rg_all_users', JSON.stringify(users));
+        window.dispatchEvent(new CustomEvent('rg_user_updated', { detail: { email: cleanEmail, fields: updatedFields } }));
+      }
+
+      // Update Appwrite / Supabase profiles
+      const { appwrite } = await import('../lib/appwrite');
+      await appwrite.from('profiles').upsert([{
+        id: userId,
+        email: cleanEmail,
+        ...updatedFields
+      }], { onConflict: 'email' });
+
+      // If updating currently logged in user
+      if (user && (user.id === userId || user.email?.toLowerCase() === cleanEmail)) {
+        const updated = { ...user, ...updatedFields };
+        setUser(updated);
+        localStorage.setItem('rg_current_user', JSON.stringify(updated));
+        if (updatedFields.name) {
+          localStorage.setItem('rg_username', updatedFields.name);
+        }
+      }
+
+      return { success: true, message: 'মেম্বারের প্রোফাইল সফলভাবে আপডেট করা হয়েছে!' };
+    } catch (err) {
+      console.error('Admin update user profile error:', err);
+      return { success: false, message: 'প্রোফাইল আপডেট করতে সমস্যা হয়েছে' };
+    }
+  };
+
+  // Delete User (alias to removeMemberFromApp)
+  const deleteUser = async (userId, userEmail) => {
+    return removeMemberFromApp(userId, userEmail);
   };
 
   // Update User Role
   const updateUserRole = async (userId, userEmail, newRole) => {
-    try {
-      if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('rg_all_users');
-        if (stored) {
-          let users = JSON.parse(stored);
-          users = users.map(u => {
-            if (u.id === userId || (u.email && u.email.toLowerCase() === userEmail?.toLowerCase())) {
-              return { ...u, role: newRole };
-            }
-            return u;
-          });
-          localStorage.setItem('rg_all_users', JSON.stringify(users));
-        }
-      }
-
-      // Update Appwrite profiles
-      const { appwrite } = await import('../lib/appwrite');
-      if (userId) {
-        await appwrite.from('profiles').update({ role: newRole }).eq('id', userId);
-      } else if (userEmail) {
-        await appwrite.from('profiles').update({ role: newRole }).eq('email', userEmail);
-      }
-
-      // If updating current logged in user
-      if (user && (user.id === userId || user.email?.toLowerCase() === userEmail?.toLowerCase())) {
-        updateProfile({ role: newRole });
-      }
-
-      return { success: true, message: 'ইউজার রোল সফলভাবে আপডেট হয়েছে!' };
-    } catch (err) {
-      console.error('Update user role error:', err);
-      return { success: false, message: 'রোল আপডেট করতে সমস্যা হয়েছে' };
-    }
+    return adminUpdateUserProfile(userId, userEmail, { role: newRole });
   };
 
   // Logout Handler
@@ -408,13 +583,13 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Update Profile Data (Role is protected from self-elevation)
+  // Update Profile Data (Self edit by Member)
   const updateProfile = (updatedData) => {
     if (!user) return;
     const isOwner = (user.email || '').toLowerCase() === 'redgreenonline2023@gmail.com';
     const isCurrentAdmin = (user.role || '').toLowerCase().includes('admin') || (user.role || '').toLowerCase().includes('অ্যাডমিন') || isOwner;
     
-    // Non-admin users cannot arbitrarily modify their assigned role
+    // Regular members cannot modify their own assigned role/designation
     const sanitizedData = { ...updatedData };
     if (!isCurrentAdmin && sanitizedData.role) {
       delete sanitizedData.role;
@@ -425,6 +600,25 @@ export function AuthProvider({ children }) {
     localStorage.setItem('rg_current_user', JSON.stringify(newUserData));
     if (sanitizedData.name) {
       localStorage.setItem('rg_username', sanitizedData.name);
+    }
+
+    // Sync to rg_all_users and profiles
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('rg_all_users');
+      let users = stored ? JSON.parse(stored) : [...DEFAULT_REGISTERED_USERS];
+      let found = false;
+      users = users.map(u => {
+        if (u.email?.toLowerCase() === user.email?.toLowerCase() || (user.id && u.id === user.id)) {
+          found = true;
+          return { ...u, ...sanitizedData };
+        }
+        return u;
+      });
+      if (!found) {
+        users.push(newUserData);
+      }
+      localStorage.setItem('rg_all_users', JSON.stringify(users));
+      window.dispatchEvent(new CustomEvent('rg_user_updated', { detail: { email: user.email?.toLowerCase(), fields: sanitizedData } }));
     }
   };
 
@@ -437,6 +631,8 @@ export function AuthProvider({ children }) {
       demoLogin,
       logout,
       updateProfile,
+      adminUpdateUserProfile,
+      removeMemberFromApp,
       isAdmin,
       isModerator,
       userRole,

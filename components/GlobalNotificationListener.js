@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { appwrite as supabase } from '../lib/appwrite';
-import { Bell, Mail, X, CheckSquare, MessageSquare, Volume2, Sparkles, VolumeX } from 'lucide-react';
+import { Bell, Mail, X, CheckSquare, MessageSquare, Volume2, Sparkles, VolumeX, Smartphone, Check } from 'lucide-react';
 import Link from 'next/link';
 import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
+import { registerPushNotifications } from '../utils/pushManager';
 
 export default function GlobalNotificationListener() {
   const [activeAlerts, setActiveAlerts] = useState([]);
@@ -11,10 +12,16 @@ export default function GlobalNotificationListener() {
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
 
   useEffect(() => {
-    // Check permission state
+    // Check permission state and auto-register push subscription
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
         setNotificationPermissionGranted(true);
+        const myUser = localStorage.getItem('rg_username') || '';
+        const myEmail = localStorage.getItem('rg_email') || '';
+        const myRole = localStorage.getItem('rg_user_role') || '';
+        if (myUser) {
+          registerPushNotifications(myUser, myEmail, myRole).catch(() => {});
+        }
       } else if (Notification.permission === 'default') {
         // Show subtle permission banner on mobile/desktop
         setShowPermissionPrompt(true);
@@ -43,12 +50,38 @@ export default function GlobalNotificationListener() {
       });
     };
 
+    // 3. Listen to Service Worker Push Messages (when app is open or tab is in background)
+    const handleSWMessageEvent = (e) => {
+      const data = e.data || {};
+      if (data.type === 'PUSH_MESSAGE_RECEIVED') {
+        const payload = data.payload || {};
+        const myUser = typeof window !== 'undefined' ? (localStorage.getItem('rg_username') || '') : '';
+        if (payload.sender && myUser && payload.sender.trim().toLowerCase() === myUser.trim().toLowerCase()) {
+          return;
+        }
+        playMessengerSound();
+        setIncomingMessageToast({
+          id: 'sw_push_' + Date.now(),
+          sender: payload.sender || 'মেসেঞ্জার ইউজার',
+          content: payload.body || 'নতুন মেসেজ এসেছে',
+          room: payload.room || 'general',
+          created_at: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })
+        });
+        setTimeout(() => {
+          setIncomingMessageToast((prev) => (prev && prev.id && prev.id.startsWith('sw_push_') ? null : prev));
+        }, 6000);
+      }
+    };
+
     if (typeof window !== 'undefined') {
       window.addEventListener('rg_task_alarm_fired', handleSWAlarmEvent);
       window.addEventListener('rg_task_alarm_received', handleSWAlarmEvent);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', handleSWMessageEvent);
+      }
     }
 
-    // 3. Realtime Messages Listener for instant sound & notifications
+    // 4. Realtime Messages Listener for instant sound & notifications
     let currentUsername = '';
     if (typeof window !== 'undefined') {
       currentUsername = localStorage.getItem('rg_username') || '';
@@ -95,6 +128,9 @@ export default function GlobalNotificationListener() {
       if (typeof window !== 'undefined') {
         window.removeEventListener('rg_task_alarm_fired', handleSWAlarmEvent);
         window.removeEventListener('rg_task_alarm_received', handleSWAlarmEvent);
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.removeEventListener('message', handleSWMessageEvent);
+        }
       }
     };
   }, []);
@@ -103,7 +139,14 @@ export default function GlobalNotificationListener() {
     const granted = await requestNotificationPermission();
     setNotificationPermissionGranted(granted);
     setShowPermissionPrompt(false);
+    if (granted && typeof window !== 'undefined') {
+      const myUser = localStorage.getItem('rg_username') || '';
+      const myEmail = localStorage.getItem('rg_email') || '';
+      const myRole = localStorage.getItem('rg_user_role') || '';
+      await registerPushNotifications(myUser, myEmail, myRole);
+    }
   };
+
 
   const checkPendingTasks = async () => {
     try {
@@ -173,8 +216,8 @@ export default function GlobalNotificationListener() {
               <Volume2 className="w-4 h-4 animate-bounce" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">মেসেঞ্জার সাউন্ড ও নোটিফিকেশন</p>
-              <p className="text-[10px] text-slate-300 truncate">মেসেজের রিয়েল-টাইম সাউন্ড শুনতে নোটিফিকেশন এলাউ করুন</p>
+              <p className="text-xs font-bold text-white truncate">মেসেঞ্জার ব্যাকগ্রাউন্ড পুশ ও সাউন্ড নোটিফিকেশন</p>
+              <p className="text-[10px] text-slate-300 truncate">অ্যাপ বন্ধ থাকলেও মোবাইলে মেসেজ নোটিফিকেশন পেতে অন করুন</p>
             </div>
           </div>
 
