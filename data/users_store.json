@@ -1,0 +1,105 @@
+{
+  "users": [
+    {
+      "id": "usr_admin_01",
+      "name": "MD SHANTO",
+      "nickname": "Shanto",
+      "email": "redgreenonline2023@gmail.com",
+      "role": "অ্যাপ ডেভলপার ও চিফ অ্যাডমিন",
+      "status": "active",
+      "approval_status": "active",
+      "presence": "online",
+      "avatar_emoji": "🧑‍💻",
+      "phone": "+880 1700-000000",
+      "bio": "অফিস মেসেঞ্জারের ডেভলপার ও চিফ অ্যাডমিন।"
+    },
+    {
+      "id": "usr_mem_tanveer",
+      "name": "তানভীর আহমেদ",
+      "nickname": "তানভীর",
+      "email": "tanveer.office@gmail.com",
+      "role": "মডারেটর / টিম লিড",
+      "status": "active",
+      "approval_status": "active",
+      "presence": "online",
+      "avatar_emoji": "👨‍💼",
+      "phone": "+880 1711-223344",
+      "bio": "অপারেশনস টিম লিড ও মেসেঞ্জার মডারেটর।"
+    },
+    {
+      "id": "usr_mem_nusrat",
+      "name": "নুসরাত জাহান",
+      "nickname": "নুসরাত",
+      "email": "nusrat.creative@gmail.com",
+      "role": "ডিজাইনার ও ক্রিয়েটিভ",
+      "status": "active",
+      "approval_status": "active",
+      "presence": "away",
+      "avatar_emoji": "👩‍🎨",
+      "phone": "+880 1722-334455",
+      "bio": "ইউআই/ইউএক্স ডিজাইনার এবং ব্র্যান্ড এসেট স্পেশালিস্ট।"
+    },
+    {
+      "id": "usr_mem_shahin",
+      "name": "শাহিনুর রহমান",
+      "nickname": "শাহিন",
+      "email": "shahin.dev@gmail.com",
+      "role": "সফটওয়্যার ইঞ্জিনিয়ার",
+      "status": "active",
+      "approval_status": "active",
+      "presence": "busy",
+      "avatar_emoji": "🧑‍💻",
+      "phone": "+880 1733-445566",
+      "bio": "ফুল-স্ট্যাক ওয়েব ডেভেলপার এবং সিস্টেম আর্কিটেক্ট।"
+    },
+    {
+      "id": "usr_mem_redgreen5536",
+      "name": "Red Green Member",
+      "nickname": "Member",
+      "email": "redgreen5536@gmail.com",
+      "role": "অফিস মেম্বার",
+      "status": "pending_approval",
+      "approval_status": "pending_approval",
+      "presence": "offline",
+      "avatar_emoji": "🧑‍💻",
+      "phone": "",
+      "bio": "নতুন রেজিস্ট্রেশন করা মেম্বার",
+      "created_at": "2026-09-04T18:00:00.000Z"
+    }
+  ],
+  "credentials": {
+    "redgreenonline2023@gmail.com": {
+      "password": "Admin@RG2026!",
+      "role": "অ্যাপ ডেভলপার ও চিফ অ্যাডমিন",
+      "status": "active",
+      "name": "MD SHANTO"
+    },
+    "redgreen5536@gmail.com": {
+      "password": "password123",
+      "role": "অফিস মেম্বার",
+      "status": "pending_approval",
+      "name": "Red Green Member"
+    },
+    "tanveer.office@gmail.com": {
+      "password": "password123",
+      "role": "মডারেটর / টিম লিড",
+      "status": "active",
+      "name": "তানভীর আহমেদ"
+    },
+    "nusrat.creative@gmail.com": {
+      "password": "password123",
+      "role": "ডিজাইনার ও ক্রিয়েটিভ",
+      "status": "active",
+      "name": "নুসরাত জাহান"
+    },
+    "shahin.dev@gmail.com": {
+      "password": "password123",
+      "role": "সফটওয়্যার ইঞ্জিনিয়ার",
+      "status": "active",
+      "name": "শাহিনুর রহমান"
+    }
+  },
+  "removedEmails": [
+    "rahim.khan@gmail.com"
+  ]
+}

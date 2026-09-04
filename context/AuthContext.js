@@ -83,6 +83,22 @@ export function AuthProvider({ children }) {
       if (savedLogo) {
         setAppLogo(savedLogo);
       }
+
+      // Sync local credentials and users to central server on startup
+      try {
+        const localCreds = localStorage.getItem('rg_auth_credentials');
+        const localUsers = localStorage.getItem('rg_all_users');
+        if (localCreds || localUsers) {
+          fetch('/api/auth/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              users: localUsers ? JSON.parse(localUsers) : [],
+              credentials: localCreds ? JSON.parse(localCreds) : {}
+            })
+          }).catch(() => {});
+        }
+      } catch (e) {}
     }
     checkUser();
   }, []);
@@ -278,7 +294,43 @@ export function AuthProvider({ children }) {
       const creds = getAuthCredentials();
       const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
 
-      // 1. Try Appwrite Authentication if configured
+      // 1. Try Central Server API verification first (Centralized cross-device authentication)
+      try {
+        const apiRes = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
+        });
+        const apiData = await apiRes.json();
+
+        if (apiRes.ok && apiData.success && apiData.user) {
+          const loggedUser = { ...apiData.user, loggedIn: true };
+          setUser(loggedUser);
+          localStorage.setItem('rg_current_user', JSON.stringify(loggedUser));
+          localStorage.setItem('rg_username', loggedUser.name);
+          await saveRegisteredUser(loggedUser);
+          setLoading(false);
+          return { success: true, message: 'সফলভাবে লগইন সম্পন্ন হয়েছে!' };
+        }
+
+        if (apiData.pendingApproval) {
+          setLoading(false);
+          return {
+            success: false,
+            pendingApproval: true,
+            message: apiData.message || 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।'
+          };
+        }
+
+        if (apiRes.status === 401 || (apiData.message && !apiData.success)) {
+          setLoading(false);
+          return { success: false, message: apiData.message };
+        }
+      } catch (netErr) {
+        console.warn('Central server login unavailable, using local verification:', netErr);
+      }
+
+      // 2. Try Appwrite Authentication if configured
       if (isAppwriteConfigured) {
         try {
           try { await account.deleteSession('current'); } catch (e) {}
@@ -439,18 +491,39 @@ export function AuthProvider({ children }) {
       }
 
       const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+      const initialStatus = isOwner ? 'active' : 'pending_approval';
+      const initialRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার';
+
+      // 1. Send to Central Server API (Cross-browser & cross-device persistence)
+      try {
+        const apiRes = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: cleanName,
+            email: cleanEmail,
+            password: cleanPassword,
+            role: initialRole
+          })
+        });
+        const apiData = await apiRes.json();
+        if (!apiRes.ok && apiData && apiData.message) {
+          setLoading(false);
+          return { success: false, message: apiData.message };
+        }
+      } catch (netErr) {
+        console.warn('Central server register notice, keeping local fallback:', netErr);
+      }
+
       const creds = getAuthCredentials();
 
-      // Check if email already registered
+      // Check if email already registered locally
       if (creds[cleanEmail]) {
         setLoading(false);
         return { success: false, message: 'এই ইমেইল দিয়ে ইতোমধ্যে একটি অ্যাকাউন্ট রয়েছে। দয়া করে লগইন করুন।' };
       }
 
       // Save credentials into secure store
-      const initialStatus = isOwner ? 'active' : 'pending_approval';
-      const initialRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার';
-
       creds[cleanEmail] = {
         password: cleanPassword,
         name: cleanName,
@@ -504,6 +577,21 @@ export function AuthProvider({ children }) {
       if (!userEmail) return { success: false, message: 'ইমেইল পাওয়া যায়নি।' };
       const cleanEmail = userEmail.toLowerCase();
       
+      // Central Server API approval call
+      try {
+        await fetch('/api/auth/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminEmail: user?.email || 'redgreenonline2023@gmail.com',
+            targetEmail: cleanEmail,
+            status: 'active'
+          })
+        });
+      } catch (netErr) {
+        console.warn('Central server approve call notice:', netErr);
+      }
+
       const creds = getAuthCredentials();
       if (creds[cleanEmail]) {
         creds[cleanEmail].status = 'active';
@@ -530,6 +618,19 @@ export function AuthProvider({ children }) {
         return { success: false, message: 'চিফ অ্যাডমিন অ্যাকাউন্ট সাসপেন্ড করা যাবে না।' };
       }
 
+      // Central Server API suspend call
+      try {
+        await fetch('/api/auth/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminEmail: user?.email || 'redgreenonline2023@gmail.com',
+            targetEmail: cleanEmail,
+            status: 'suspended'
+          })
+        });
+      } catch (netErr) {}
+
       const creds = getAuthCredentials();
       if (creds[cleanEmail]) {
         creds[cleanEmail].status = 'suspended';
@@ -555,6 +656,19 @@ export function AuthProvider({ children }) {
     try {
       if (!userEmail || !newPassword) return { success: false, message: 'ইমেইল এবং নতুন পাসওয়ার্ড আবশ্যক।' };
       const cleanEmail = userEmail.toLowerCase();
+
+      // Central Server API reset password call
+      try {
+        await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetEmail: cleanEmail,
+            newPassword
+          })
+        });
+      } catch (netErr) {}
+
       const creds = getAuthCredentials();
       if (!creds[cleanEmail]) {
         creds[cleanEmail] = { password: newPassword, status: 'active', role: 'অফিস মেম্বার' };
@@ -620,6 +734,19 @@ export function AuthProvider({ children }) {
   // Get Registered Users List (Office Members Directory)
   const getRegisteredUsers = async () => {
     try {
+      let serverList = [];
+      try {
+        const res = await fetch('/api/auth/users');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.users)) {
+            serverList = json.users;
+          }
+        }
+      } catch (netErr) {
+        console.warn('Could not fetch server users, using local cache:', netErr);
+      }
+
       let localList = [];
       if (typeof window !== 'undefined') {
         const stored = localStorage.getItem('rg_all_users');
@@ -628,26 +755,47 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // Merge with Appwrite profiles
-      const { appwrite } = await import('../lib/appwrite');
-      const { data: remoteProfiles } = await appwrite.from('profiles').select('*');
+      // Merge with Appwrite profiles if configured
+      let remoteProfiles = [];
+      try {
+        const { appwrite } = await import('../lib/appwrite');
+        const resp = await appwrite.from('profiles').select('*');
+        if (resp && resp.data) {
+          remoteProfiles = resp.data;
+        }
+      } catch (e) {}
 
       const combinedMap = new Map();
-      // Always include Default Registered Users (including Developer/Chief Admin)
-      DEFAULT_REGISTERED_USERS.forEach(u => {
-        if (u && u.email && !isEmailRemoved(u.email)) {
-          combinedMap.set(u.email.toLowerCase(), u);
-        }
-      });
 
-      if (localList && Array.isArray(localList)) {
-        localList.forEach(u => {
+      // 1. Seed server users first (source of truth from central API)
+      if (serverList && Array.isArray(serverList)) {
+        serverList.forEach(u => {
           if (u && u.email && !isEmailRemoved(u.email)) {
             combinedMap.set(u.email.toLowerCase(), u);
           }
         });
       }
 
+      // 2. Always include Default Registered Users (including Developer/Chief Admin)
+      DEFAULT_REGISTERED_USERS.forEach(u => {
+        if (u && u.email && !isEmailRemoved(u.email)) {
+          if (!combinedMap.has(u.email.toLowerCase())) {
+            combinedMap.set(u.email.toLowerCase(), u);
+          }
+        }
+      });
+
+      // 3. Merge local storage users
+      if (localList && Array.isArray(localList)) {
+        localList.forEach(u => {
+          if (u && u.email && !isEmailRemoved(u.email)) {
+            const existing = combinedMap.get(u.email.toLowerCase()) || {};
+            combinedMap.set(u.email.toLowerCase(), { ...existing, ...u });
+          }
+        });
+      }
+
+      // 4. Merge remote Appwrite profiles
       if (remoteProfiles && Array.isArray(remoteProfiles)) {
         remoteProfiles.forEach(rp => {
           if (rp && rp.email && !isEmailRemoved(rp.email)) {
@@ -661,11 +809,12 @@ export function AuthProvider({ children }) {
       const allUsers = Array.from(combinedMap.values()).map(u => {
         const cleanEmail = u.email ? u.email.toLowerCase() : '';
         const userCred = creds[cleanEmail];
-        const status = userCred?.status || u.approval_status || (cleanEmail === 'redgreenonline2023@gmail.com' ? 'active' : 'active');
+        const status = u.approval_status || u.status || userCred?.status || (cleanEmail === 'redgreenonline2023@gmail.com' ? 'active' : 'active');
         return {
           ...u,
           approval_status: status,
-          auth_status: status
+          auth_status: status,
+          status
         };
       });
 
@@ -685,6 +834,17 @@ export function AuthProvider({ children }) {
       if (cleanEmail === 'redgreenonline2023@gmail.com') {
         return { success: false, message: 'প্রধান ডেভলপার ও চিফ অ্যাডমিন অ্যাকাউন্ট রিমুভ করা যাবে না।' };
       }
+
+      // Central Server API delete call
+      try {
+        await fetch('/api/auth/delete-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetEmail: cleanEmail
+          })
+        });
+      } catch (netErr) {}
 
       // 1. Add to blacklist / removed list in localStorage
       if (typeof window !== 'undefined') {

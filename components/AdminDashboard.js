@@ -143,16 +143,16 @@ export default function AdminDashboard() {
   };
 
   // Fetch registered users
-  const loadUsers = async () => {
-    setUsersLoading(true);
+  const loadUsers = async (silent = false) => {
+    if (!silent) setUsersLoading(true);
     try {
       const data = await getRegisteredUsers();
       setUsersList(data || []);
     } catch (err) {
       console.error('Load registered users error:', err);
-      showToast('ইউজার তালিকা লোড করতে ত্রুটি হয়েছে', 'error');
+      if (!silent) showToast('ইউজার তালিকা লোড করতে ত্রুটি হয়েছে', 'error');
     } finally {
-      setUsersLoading(false);
+      if (!silent) setUsersLoading(false);
     }
   };
 
@@ -177,6 +177,11 @@ export default function AdminDashboard() {
     loadUsers();
     loadGroups();
 
+    // Auto-poll every 5 seconds for new registration requests across devices
+    const pollTimer = setInterval(() => {
+      loadUsers(true);
+    }, 5000);
+
     // Listen for custom events
     const handleUserUpdated = () => loadUsers();
     const handleUserRemoved = () => {
@@ -193,6 +198,7 @@ export default function AdminDashboard() {
     }
 
     return () => {
+      clearInterval(pollTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('rg_user_updated', handleUserUpdated);
         window.removeEventListener('rg_member_removed', handleUserRemoved);
@@ -545,7 +551,7 @@ export default function AdminDashboard() {
   const modCount = usersList.filter(u => u.role?.toLowerCase().includes('মডারেটর') || u.role?.toLowerCase().includes('লিড')).length;
   const onlineCount = usersList.filter(u => u.presence === 'online').length;
   const pendingUsers = usersList.filter(
-    u => (u.approval_status === 'pending_approval' || u.auth_status === 'pending_approval') &&
+    u => (u.approval_status === 'pending_approval' || u.auth_status === 'pending_approval' || u.status === 'pending_approval') &&
          (u.email || '').toLowerCase() !== 'redgreenonline2023@gmail.com'
   );
 
