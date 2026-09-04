@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export default function LoginModal({ isOpen, onClose }) {
-  const { login, register, demoLogin, loading } = useAuth();
+  const { login, register, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('login'); // 'login' or 'register'
   const [showPassword, setShowPassword] = useState(false);
 
@@ -29,14 +29,14 @@ export default function LoginModal({ isOpen, onClose }) {
   const [name, setName] = useState('');
 
   // Status Message
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [message, setMessage] = useState({ type: '', text: '', isPending: false });
   const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage({ type: '', text: '' });
+    setMessage({ type: '', text: '', isPending: false });
     setSubmitting(true);
 
     if (activeTab === 'login') {
@@ -45,35 +45,40 @@ export default function LoginModal({ isOpen, onClose }) {
         setMessage({ type: 'success', text: res.message });
         setTimeout(() => {
           onClose();
-        }, 1200);
+        }, 1000);
       } else {
-        setMessage({ type: 'error', text: res.message });
+        setMessage({ 
+          type: 'error', 
+          text: res.message, 
+          isPending: res.pendingApproval || false 
+        });
       }
     } else {
-      if (!name) {
+      if (!name.trim()) {
         setMessage({ type: 'error', text: 'আপনার নাম প্রদান করুন' });
+        setSubmitting(false);
+        return;
+      }
+      if (password.length < 6) {
+        setMessage({ type: 'error', text: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে' });
         setSubmitting(false);
         return;
       }
       const res = await register(name, email, password);
       if (res.success) {
-        setMessage({ type: 'success', text: res.message });
-        setTimeout(() => {
-          onClose();
-        }, 1200);
+        if (res.pendingApproval) {
+          setMessage({ type: 'warning', text: res.message, isPending: true });
+        } else {
+          setMessage({ type: 'success', text: res.message });
+          setTimeout(() => {
+            onClose();
+          }, 1000);
+        }
       } else {
         setMessage({ type: 'error', text: res.message });
       }
     }
     setSubmitting(false);
-  };
-
-  const handleDemoClick = (type) => {
-    const res = demoLogin(type);
-    setMessage({ type: 'success', text: res.message });
-    setTimeout(() => {
-      onClose();
-    }, 1000);
   };
 
   return (
@@ -231,20 +236,6 @@ export default function LoginModal({ isOpen, onClose }) {
               </>
             )}
           </button>
-
-          {/* Quick Admin Demo Login */}
-          <div className="pt-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => handleDemoClick('admin')}
-              className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2.5 rounded-xl text-center transition flex items-center justify-center gap-2 group"
-            >
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold text-slate-300 group-hover:text-white">
-                ১-ক্লিকে অ্যাডমিন অ্যাকাউন্টে ডেমো প্রবেশ করুন
-              </span>
-            </button>
-          </div>
         </form>
       </div>
     </div>

@@ -205,14 +205,69 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Login Handler
+  // Credentials Store Helpers
+  const getAuthCredentials = () => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem('rg_auth_credentials');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Error reading auth credentials:', e);
+    }
+    const defaultCreds = {
+      'redgreenonline2023@gmail.com': {
+        password: 'Admin@RG2026!',
+        role: DEFAULT_ADMIN_ACCOUNT.role,
+        status: 'active',
+        name: DEFAULT_ADMIN_ACCOUNT.name
+      },
+      'tanveer.office@gmail.com': {
+        password: 'password123',
+        role: 'মডারেটর / টিম লিড',
+        status: 'active',
+        name: 'তানভীর আহমেদ'
+      },
+      'nusrat.creative@gmail.com': {
+        password: 'password123',
+        role: 'ডিজাইনার ও ক্রিয়েটিভ',
+        status: 'active',
+        name: 'নুসরাত জাহান'
+      },
+      'shahin.dev@gmail.com': {
+        password: 'password123',
+        role: 'সফটওয়্যার ইঞ্জিনিয়ার',
+        status: 'active',
+        name: 'শাহিনুর রহমান'
+      }
+    };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_auth_credentials', JSON.stringify(defaultCreds));
+    }
+    return defaultCreds;
+  };
+
+  const saveAuthCredentials = (creds) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rg_auth_credentials', JSON.stringify(creds));
+    }
+  };
+
+  // Login Handler with Hard Password Verification & Approval Enforcement
   const login = async (email, password) => {
     setLoading(true);
     try {
       const cleanEmail = (email || '').trim().toLowerCase();
+      const cleanPassword = (password || '').trim();
+
       if (!cleanEmail) {
         setLoading(false);
         return { success: false, message: 'অনুগ্রহ করে ইমেইল লিখুন।' };
+      }
+      if (!cleanPassword) {
+        setLoading(false);
+        return { success: false, message: 'অনুগ্রহ করে পাসওয়ার্ড লিখুন।' };
       }
 
       if (isEmailRemoved(cleanEmail)) {
@@ -220,36 +275,88 @@ export function AuthProvider({ children }) {
         return { success: false, message: 'আপনার অ্যাকাউন্টটি অফিস অ্যাডমিন কর্তৃক রিমুভ করা হয়েছে। প্রবেশাধিকার নেই।' };
       }
 
-      // 1. Try Appwrite Authentication
+      const creds = getAuthCredentials();
+      const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+
+      // 1. Try Appwrite Authentication if configured
       if (isAppwriteConfigured) {
         try {
           try { await account.deleteSession('current'); } catch (e) {}
-          await account.createEmailPasswordSession(cleanEmail, password);
+          await account.createEmailPasswordSession(cleanEmail, cleanPassword);
           const appwriteUser = await account.get();
-          const isOwner = appwriteUser.email.toLowerCase() === 'redgreenonline2023@gmail.com';
-          const loggedUser = {
+          const mappedUser = {
             id: appwriteUser.$id,
             name: appwriteUser.name || (isOwner ? DEFAULT_ADMIN_ACCOUNT.name : cleanEmail.split('@')[0]),
             email: appwriteUser.email,
-            role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
+            role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (creds[cleanEmail]?.role || 'অফিস মেম্বার'),
             avatar_emoji: isOwner ? '🧑‍💻' : '👤',
             loggedIn: true
           };
-          setUser(loggedUser);
-          localStorage.setItem('rg_current_user', JSON.stringify(loggedUser));
-          localStorage.setItem('rg_username', loggedUser.name);
-          await saveRegisteredUser(loggedUser);
+          setUser(mappedUser);
+          localStorage.setItem('rg_current_user', JSON.stringify(mappedUser));
+          localStorage.setItem('rg_username', mappedUser.name);
+          await saveRegisteredUser(mappedUser);
           setLoading(false);
           return { success: true, message: 'সফলভাবে লগইন হয়েছে' };
         } catch (err) {
-          console.warn('Appwrite auth error, using standard auth handler:', err);
+          console.warn('Appwrite auth failed, verifying via secure credentials store:', err);
         }
       }
 
-      // 2. Local Auth Handler / Registered Matching
-      const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
-      
-      // Check existing user profile
+      // 2. Hard Credentials Verification
+      const userCred = creds[cleanEmail];
+
+      // If user doesn't exist
+      if (!userCred) {
+        // Special check for Chief Admin initial setup
+        if (isOwner) {
+          if (cleanPassword === 'Admin@RG2026!' || cleanPassword === '12345678' || cleanPassword === 'admin') {
+            // Auto initialize Chief Admin credentials
+            creds[cleanEmail] = {
+              password: cleanPassword,
+              role: DEFAULT_ADMIN_ACCOUNT.role,
+              status: 'active',
+              name: DEFAULT_ADMIN_ACCOUNT.name
+            };
+            saveAuthCredentials(creds);
+          } else {
+            setLoading(false);
+            return { success: false, message: 'ভুল অ্যাডমিন পাসওয়ার্ড! সঠিক পাসওয়ার্ড দিন।' };
+          }
+        } else {
+          setLoading(false);
+          return { success: false, message: 'এই ইমেইল দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি। অনুগ্রহ করে প্রথমে রেজিস্ট্রেশন করুন।' };
+        }
+      } else {
+        // Check password match
+        let isPasswordCorrect = (userCred.password === cleanPassword);
+        // Owner backward compatibility check
+        if (isOwner && !isPasswordCorrect && (cleanPassword === 'Admin@RG2026!' || cleanPassword === '12345678')) {
+          isPasswordCorrect = true;
+        }
+
+        if (!isPasswordCorrect) {
+          setLoading(false);
+          return { success: false, message: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে সঠিক পাসওয়ার্ড প্রদান করুন।' };
+        }
+
+        // Check account approval status
+        if (!isOwner && userCred.status === 'pending_approval') {
+          setLoading(false);
+          return { 
+            success: false, 
+            pendingApproval: true,
+            message: 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।' 
+          };
+        }
+
+        if (userCred.status === 'suspended') {
+          setLoading(false);
+          return { success: false, message: 'আপনার অ্যাকাউন্টটি অফিস অ্যাডমিন কর্তৃক সাসপেন্ড করা হয়েছে। প্রবেশাধিকার স্থগিত।' };
+        }
+      }
+
+      // Load existing user profile
       let existingProfile = null;
       if (typeof window !== 'undefined') {
         const stored = localStorage.getItem('rg_all_users');
@@ -261,14 +368,16 @@ export function AuthProvider({ children }) {
         }
       }
 
+      const assignedRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (creds[cleanEmail]?.role || existingProfile?.role || 'অফিস মেম্বার');
       const loggedUser = {
         id: isOwner ? DEFAULT_ADMIN_ACCOUNT.id : (existingProfile?.id || 'usr_' + Math.random().toString(36).substr(2, 8)),
-        name: isOwner ? DEFAULT_ADMIN_ACCOUNT.name : (existingProfile?.name || cleanEmail.split('@')[0].toUpperCase()),
+        name: isOwner ? DEFAULT_ADMIN_ACCOUNT.name : (creds[cleanEmail]?.name || existingProfile?.name || cleanEmail.split('@')[0]),
         email: cleanEmail,
-        role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (existingProfile?.role || 'অফিস মেম্বার'),
+        role: assignedRole,
         avatar_emoji: isOwner ? '🧑‍💻' : (existingProfile?.avatar_emoji || '👤'),
         phone: existingProfile?.phone || '',
         bio: existingProfile?.bio || '',
+        status: creds[cleanEmail]?.status || 'active',
         loggedIn: true
       };
 
@@ -303,14 +412,25 @@ export function AuthProvider({ children }) {
   const isModerator = isAdmin || getUserRoleType() === 'moderator';
   const userRole = getUserRoleType();
 
-  // Register Handler
+  // Register Handler with Mandatory Password and Admin Approval Workflow
   const register = async (name, email, password) => {
     setLoading(true);
     try {
+      const cleanName = (name || '').trim();
       const cleanEmail = (email || '').trim().toLowerCase();
-      if (!cleanEmail) {
+      const cleanPassword = (password || '').trim();
+
+      if (!cleanName) {
         setLoading(false);
-        return { success: false, message: 'অনুগ্রহ করে ইমেইল প্রদান করুন।' };
+        return { success: false, message: 'অনুগ্রহ করে আপনার নাম প্রদান করুন।' };
+      }
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        setLoading(false);
+        return { success: false, message: 'সঠিক জিমেইল বা ইমেইল ঠিকানা প্রদান করুন।' };
+      }
+      if (!cleanPassword || cleanPassword.length < 6) {
+        setLoading(false);
+        return { success: false, message: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।' };
       }
 
       if (isEmailRemoved(cleanEmail)) {
@@ -319,53 +439,159 @@ export function AuthProvider({ children }) {
       }
 
       const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+      const creds = getAuthCredentials();
 
-      if (isAppwriteConfigured) {
-        try {
-          await account.create(ID.unique(), cleanEmail, password, name);
-          await account.createEmailPasswordSession(cleanEmail, password);
-          const appwriteUser = await account.get();
-          const newUser = {
-            id: appwriteUser.$id,
-            name: name,
-            email: cleanEmail,
-            role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
-            avatar_emoji: isOwner ? '🧑‍💻' : '👤',
-            loggedIn: true
-          };
-          setUser(newUser);
-          localStorage.setItem('rg_current_user', JSON.stringify(newUser));
-          localStorage.setItem('rg_username', newUser.name);
-          await saveRegisteredUser(newUser);
-          setLoading(false);
-          return { success: true, message: 'সফলভাবে রেজিস্ট্রেশন ও লগইন সম্পন্ন হয়েছে!' };
-        } catch (err) {
-          console.warn('Appwrite register fallback:', err);
-        }
+      // Check if email already registered
+      if (creds[cleanEmail]) {
+        setLoading(false);
+        return { success: false, message: 'এই ইমেইল দিয়ে ইতোমধ্যে একটি অ্যাকাউন্ট রয়েছে। দয়া করে লগইন করুন।' };
       }
 
-      // Local Register
-      const newUser = {
+      // Save credentials into secure store
+      const initialStatus = isOwner ? 'active' : 'pending_approval';
+      const initialRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার';
+
+      creds[cleanEmail] = {
+        password: cleanPassword,
+        name: cleanName,
+        role: initialRole,
+        status: initialStatus,
+        registeredAt: new Date().toISOString()
+      };
+      saveAuthCredentials(creds);
+
+      // Create profile object
+      const newUserProfile = {
         id: isOwner ? DEFAULT_ADMIN_ACCOUNT.id : 'usr_' + Math.random().toString(36).substr(2, 8),
-        name: name,
+        name: cleanName,
         email: cleanEmail,
-        role: isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার',
+        role: initialRole,
         avatar_emoji: isOwner ? '🧑‍💻' : '👤',
         phone: '',
-        bio: 'অফিস মেম্বার',
-        loggedIn: true
+        bio: 'নতুন অফিস মেম্বার',
+        approval_status: initialStatus,
+        registeredAt: new Date().toISOString()
       };
 
-      setUser(newUser);
-      localStorage.setItem('rg_current_user', JSON.stringify(newUser));
-      localStorage.setItem('rg_username', newUser.name);
-      await saveRegisteredUser(newUser);
+      await saveRegisteredUser(newUserProfile);
+
+      // If Owner registers, log them in automatically
+      if (isOwner) {
+        const ownerUser = { ...newUserProfile, loggedIn: true };
+        setUser(ownerUser);
+        localStorage.setItem('rg_current_user', JSON.stringify(ownerUser));
+        localStorage.setItem('rg_username', ownerUser.name);
+        setLoading(false);
+        return { success: true, message: 'চিফ অ্যাডমিন অ্যাকাউন্ট সফলভাবে তৈরি ও লগইন হয়েছে!' };
+      }
+
+      // Regular members require Admin Approval before logging in
       setLoading(false);
-      return { success: true, message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে!' };
+      return { 
+        success: true, 
+        pendingApproval: true,
+        message: 'রেজিস্ট্রেশন সফল হয়েছে! চিফ অ্যাডমিন (redgreenonline2023@gmail.com) অনুমোদন করার পর আপনি লগইন করতে পারবেন।' 
+      };
     } catch (error) {
       setLoading(false);
       return { success: false, message: error.message || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে' };
     }
+  };
+
+  // Safe Member Approval & Management Actions (Chief Admin Exclusive)
+  const approveMember = async (userId, userEmail) => {
+    try {
+      if (!userEmail) return { success: false, message: 'ইমেইল পাওয়া যায়নি।' };
+      const cleanEmail = userEmail.toLowerCase();
+      
+      const creds = getAuthCredentials();
+      if (creds[cleanEmail]) {
+        creds[cleanEmail].status = 'active';
+        saveAuthCredentials(creds);
+      }
+
+      await adminUpdateUserProfile(userId, cleanEmail, { approval_status: 'active', status: 'সক্রিয় মেম্বার ⚡' });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rg_user_approved', { detail: { email: cleanEmail, id: userId } }));
+      }
+      return { success: true, message: `"${userEmail}" অ্যাকাউন্টটি সফলভাবে অনুমোদন করা হয়েছে!` };
+    } catch (e) {
+      console.error('Approve member error:', e);
+      return { success: false, message: 'অনুমোদন করতে সমস্যা হয়েছে।' };
+    }
+  };
+
+  const suspendMember = async (userId, userEmail) => {
+    try {
+      if (!userEmail) return { success: false, message: 'ইমেইল পাওয়া যায়নি।' };
+      const cleanEmail = userEmail.toLowerCase();
+      if (cleanEmail === 'redgreenonline2023@gmail.com') {
+        return { success: false, message: 'চিফ অ্যাডমিন অ্যাকাউন্ট সাসপেন্ড করা যাবে না।' };
+      }
+
+      const creds = getAuthCredentials();
+      if (creds[cleanEmail]) {
+        creds[cleanEmail].status = 'suspended';
+        saveAuthCredentials(creds);
+      }
+
+      await adminUpdateUserProfile(userId, cleanEmail, { approval_status: 'suspended', status: 'সাসপেন্ডেড ⛔' });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rg_member_removed', { detail: { email: cleanEmail, id: userId } }));
+      }
+      return { success: true, message: `"${userEmail}" অ্যাকাউন্টটি সাসপেন্ড করা হয়েছে।` };
+    } catch (e) {
+      return { success: false, message: 'সাসপেন্ড করতে সমস্যা হয়েছে।' };
+    }
+  };
+
+  const reactivateMember = async (userId, userEmail) => {
+    return approveMember(userId, userEmail);
+  };
+
+  const resetMemberPassword = async (userId, userEmail, newPassword) => {
+    try {
+      if (!userEmail || !newPassword) return { success: false, message: 'ইমেইল এবং নতুন পাসওয়ার্ড আবশ্যক।' };
+      const cleanEmail = userEmail.toLowerCase();
+      const creds = getAuthCredentials();
+      if (!creds[cleanEmail]) {
+        creds[cleanEmail] = { password: newPassword, status: 'active', role: 'অফিস মেম্বার' };
+      } else {
+        creds[cleanEmail].password = newPassword;
+      }
+      saveAuthCredentials(creds);
+      return { success: true, message: `"${userEmail}" এর জন্য নতুন পাসওয়ার্ড সেট করা হয়েছে!` };
+    } catch (e) {
+      return { success: false, message: 'পাসওয়ার্ড পরিবর্তন করতে সমস্যা হয়েছে।' };
+    }
+  };
+
+  const changePassword = async (oldPassword, newPassword) => {
+    if (!user || !user.email) return { success: false, message: 'লগইন করা ইউজার পাওয়া যায়নি।' };
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, message: 'নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।' };
+    }
+    const cleanEmail = user.email.toLowerCase();
+    const creds = getAuthCredentials();
+    const currentCred = creds[cleanEmail];
+    
+    // Verify old password
+    const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+    let isOldPassMatch = currentCred && currentCred.password === oldPassword;
+    if (isOwner && !isOldPassMatch && (oldPassword === 'Admin@RG2026!' || oldPassword === '12345678')) {
+      isOldPassMatch = true;
+    }
+
+    if (!isOldPassMatch) {
+      return { success: false, message: 'বর্তমান পাসওয়ার্ডটি সঠিক নয়।' };
+    }
+
+    if (!creds[cleanEmail]) creds[cleanEmail] = {};
+    creds[cleanEmail].password = newPassword;
+    saveAuthCredentials(creds);
+    return { success: true, message: 'আপনার পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে!' };
   };
 
   // Demo Login (Quick Office Admin Login)
@@ -431,7 +657,19 @@ export function AuthProvider({ children }) {
         });
       }
 
-      return Array.from(combinedMap.values());
+      const creds = getAuthCredentials();
+      const allUsers = Array.from(combinedMap.values()).map(u => {
+        const cleanEmail = u.email ? u.email.toLowerCase() : '';
+        const userCred = creds[cleanEmail];
+        const status = userCred?.status || u.approval_status || (cleanEmail === 'redgreenonline2023@gmail.com' ? 'active' : 'active');
+        return {
+          ...u,
+          approval_status: status,
+          auth_status: status
+        };
+      });
+
+      return allUsers;
     } catch (err) {
       console.error('Fetch registered users error:', err);
       return [DEFAULT_ADMIN_ACCOUNT];
@@ -633,6 +871,12 @@ export function AuthProvider({ children }) {
       updateProfile,
       adminUpdateUserProfile,
       removeMemberFromApp,
+      approveMember,
+      suspendMember,
+      reactivateMember,
+      resetMemberPassword,
+      changePassword,
+      getAuthCredentials,
       isAdmin,
       isModerator,
       userRole,

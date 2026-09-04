@@ -5,7 +5,7 @@ import LoginModal from './LoginModal';
 import { Shield, Lock, AlertTriangle, ArrowLeft, User, Zap } from 'lucide-react';
 
 export default function ProtectedRoute({ children, requiredRole = 'member', fallbackTitle = 'অ্যাক্সেস সংরক্ষিত', fallbackMessage = null }) {
-  const { user, loading, isAdmin, isModerator, userRole, demoLogin } = useAuth();
+  const { user, loading, isAdmin, isModerator, userRole } = useAuth();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   if (loading) {
@@ -107,29 +107,16 @@ export default function ProtectedRoute({ children, requiredRole = 'member', fall
             </div>
           </div>
 
-          {/* Quick Demo Role Switch Action */}
+          {/* Admin Authorization Notice */}
           <div className="pt-2 space-y-3">
-            <div className="bg-indigo-950/40 border border-indigo-800/50 p-3 rounded-2xl text-left space-y-2">
-              <p className="text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span>টেস্টিং বা ডেমো পারপাসে ১-ক্লিকে রোল সুইচ করুন:</span>
+            <div className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-2xl text-left space-y-1.5 text-xs">
+              <p className="font-bold text-slate-300 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-blue-400" />
+                <span>পারমিশন অনুমোদন:</span>
               </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => demoLogin('admin')}
-                  className="py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-md shadow-amber-600/20"
-                >
-                  <span>🧑‍💻 অ্যাডমিন হন</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => demoLogin('moderator')}
-                  className="py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-md shadow-indigo-600/20"
-                >
-                  <span>🦁 মডারেটর হন</span>
-                </button>
-              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                এই সেকশনে প্রবেশের জন্য আপনার অ্যাকাউন্টে অ্যাডমিন পারমিশন প্রয়োজন। পারমিশন আপগ্রেডের জন্য চিফ অ্যাডমিন (<span className="text-slate-300 font-mono">redgreenonline2023@gmail.com</span>) এর সাথে যোগাযোগ করুন।
+              </p>
             </div>
 
             <Link

@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { user, isAdmin, isModerator, userRole, demoLogin } = useAuth();
+  const { user, isAdmin, isModerator, userRole } = useAuth();
   const [stats, setStats] = useState({
     pendingTasks: 0,
     urgentTasks: 0,
@@ -321,49 +321,6 @@ export default function Dashboard() {
                 <span className="text-rose-400 font-bold">প্রবেশাধিকার: 🔐 শুধুমাত্র অ্যাডমিন</span>
               )}
             </div>
-          </div>
-        </div>
-
-        {/* Quick Demo Role Switcher Bar */}
-        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-slate-300">
-            <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
-            <span className="font-semibold">রোল ভেরিফিকেশন টেস্ট করতে ১-ক্লিকে সুইচ করুন:</span>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => demoLogin('admin')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                isAdmin
-                  ? 'bg-amber-500 text-slate-950 font-extrabold ring-2 ring-amber-400/50'
-                  : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30'
-              }`}
-            >
-              <span>🧑‍💻 অ্যাডমিন</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => demoLogin('moderator')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                isModerator && !isAdmin
-                  ? 'bg-indigo-600 text-white font-extrabold ring-2 ring-indigo-400/50'
-                  : 'bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-500/30'
-              }`}
-            >
-              <span>🦁 মডারেটর</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => demoLogin('member')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                !isModerator
-                  ? 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-400/50'
-                  : 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30'
-              }`}
-            >
-              <span>🚀 সদস্য</span>
-            </button>
           </div>
         </div>
       </div>

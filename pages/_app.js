@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { AuthProvider } from '../context/AuthContext';
+import { AuthProvider, useAuth } from '../context/AuthContext';
+import { useRouter } from 'next/router';
 import Navbar from '../components/Navbar';
 import HeadlineTicker from '../components/HeadlineTicker';
 import GlobalNotificationListener from '../components/GlobalNotificationListener';
@@ -9,6 +10,34 @@ import { setupServiceWorkerAlarmListener, registerBackgroundSync } from '../util
 import { registerPushNotifications } from '../utils/pushManager';
 import { appwrite as supabase } from '../lib/appwrite';
 import '../styles/globals.css';
+
+function AppContent({ Component, pageProps }) {
+  const { user } = useAuth();
+  const router = useRouter();
+  const isLoginPage = router.pathname === '/login';
+
+  // Use custom page layout if defined, otherwise default to persistent DashboardLayout
+  const getLayout = Component.getLayout !== undefined
+    ? Component.getLayout
+    : ((page) => <DashboardLayout>{page}</DashboardLayout>);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {!isLoginPage && user?.loggedIn && (
+        <>
+          <Navbar />
+          <HeadlineTicker />
+          <GlobalNotificationListener />
+        </>
+      )}
+      <main className="flex-1 flex flex-col">
+        <AuthGuard>
+          {getLayout(<Component {...pageProps} />)}
+        </AuthGuard>
+      </main>
+    </div>
+  );
+}
 
 function MyApp({ Component, pageProps }) {
   useEffect(() => {
@@ -58,23 +87,9 @@ function MyApp({ Component, pageProps }) {
     };
   }, []);
 
-  // Use custom page layout if defined, otherwise default to persistent DashboardLayout
-  const getLayout = Component.getLayout !== undefined
-    ? Component.getLayout
-    : ((page) => <DashboardLayout>{page}</DashboardLayout>);
-
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-        <Navbar />
-        <HeadlineTicker />
-        <GlobalNotificationListener />
-        <main className="flex-1 flex flex-col">
-          <AuthGuard>
-            {getLayout(<Component {...pageProps} />)}
-          </AuthGuard>
-        </main>
-      </div>
+      <AppContent Component={Component} pageProps={pageProps} />
     </AuthProvider>
   );
 }

@@ -34,7 +34,9 @@ import {
   Send,
   Lock,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Ban,
+  ShieldAlert
 } from 'lucide-react';
 
 const DEFAULT_OFFICE_GROUPS = [
@@ -69,11 +71,14 @@ export default function AdminDashboard() {
     adminUpdateUserProfile,
     removeMemberFromApp,
     updateUserRole,
-    demoLogin
+    approveMember,
+    suspendMember,
+    reactivateMember,
+    resetMemberPassword
   } = useAuth();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'groups' | 'broadcast'
+  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'pending' | 'groups' | 'broadcast'
 
   // Users Directory States
   const [usersList, setUsersList] = useState([]);
@@ -81,6 +86,11 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Password Reset Modal
+  const [resettingUser, setResettingUser] = useState(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
 
   // Inspect / View User Profile Modal
   const [inspectUser, setInspectUser] = useState(null);
@@ -291,6 +301,76 @@ export default function AdminDashboard() {
     }
   };
 
+  // Member Approval Handler (Admin Exclusive)
+  const handleApproveUser = async (targetUser) => {
+    try {
+      const res = await approveMember(targetUser.id, targetUser.email);
+      if (res.success) {
+        showToast(res.message);
+        await loadUsers();
+      } else {
+        showToast(res.message, 'error');
+      }
+    } catch (e) {
+      showToast('অনুমোদনে ত্রুটি হয়েছে', 'error');
+    }
+  };
+
+  // Member Suspend Handler (Admin Exclusive)
+  const handleSuspendUser = async (targetUser) => {
+    try {
+      const res = await suspendMember(targetUser.id, targetUser.email);
+      if (res.success) {
+        showToast(res.message, 'error');
+        await loadUsers();
+      } else {
+        showToast(res.message, 'error');
+      }
+    } catch (e) {
+      showToast('সাসপেন্ড করতে সমস্যা হয়েছে', 'error');
+    }
+  };
+
+  // Member Reactivate Handler (Admin Exclusive)
+  const handleReactivateUser = async (targetUser) => {
+    try {
+      const res = await reactivateMember(targetUser.id, targetUser.email);
+      if (res.success) {
+        showToast(res.message);
+        await loadUsers();
+      } else {
+        showToast(res.message, 'error');
+      }
+    } catch (e) {
+      showToast('সচল করতে ত্রুটি হয়েছে', 'error');
+    }
+  };
+
+  // Reset Member Password Submit Handler
+  const handleConfirmResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resettingUser || !newPasswordInput) return;
+    if (newPasswordInput.length < 6) {
+      showToast('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে', 'error');
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      const res = await resetMemberPassword(resettingUser.email, newPasswordInput);
+      if (res.success) {
+        showToast(`"${resettingUser.name}" এর নতুন পাসওয়ার্ড সফলভাবে সেট করা হয়েছে!`);
+        setResettingUser(null);
+        setNewPasswordInput('');
+      } else {
+        showToast(res.message, 'error');
+      }
+    } catch (err) {
+      showToast('পাসওয়ার্ড রিসেট করতে সমস্যা হয়েছে', 'error');
+    } finally {
+      setResetSubmitting(false);
+    }
+  };
+
   // Create Group Handler (Exclusively for Admin to select members, name group & initialize persistent thread)
   const handleCreateGroup = async (e) => {
     e.preventDefault();
@@ -464,6 +544,10 @@ export default function AdminDashboard() {
   const adminCount = usersList.filter(u => u.role?.toLowerCase().includes('admin') || u.role?.toLowerCase().includes('অ্যাডমিন')).length;
   const modCount = usersList.filter(u => u.role?.toLowerCase().includes('মডারেটর') || u.role?.toLowerCase().includes('লিড')).length;
   const onlineCount = usersList.filter(u => u.presence === 'online').length;
+  const pendingUsers = usersList.filter(
+    u => (u.approval_status === 'pending_approval' || u.auth_status === 'pending_approval') &&
+         (u.email || '').toLowerCase() !== 'redgreenonline2023@gmail.com'
+  );
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6" id="admin-dashboard-container">
@@ -559,44 +643,34 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Quick Demo Role Switcher Helper */}
+        {/* Chief Admin Security & Approval Control Banner */}
         <div className="mt-5 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-slate-400">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>বর্তমান সক্রিয় রোল:</span>
-            <span className="font-bold text-white bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-700">
-              {user?.role || (isAdmin ? 'অ্যাডমিন' : 'সদস্য')} ({user?.name || 'চিফ অ্যাডমিন'})
+          <div className="flex items-center gap-2 text-slate-300">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>সিস্টেম অ্যাক্সেস কন্ট্রোল:</span>
+            <span className="font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-md">
+              চিফ অ্যাডমিন নিয়ন্ত্রিত (হার্ড সিকিউরিটি)
+            </span>
+            <span className="text-slate-500 font-mono text-[11px] hidden sm:inline">
+              redgreenonline2023@gmail.com
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-slate-400">টেস্টিং কুইক সুইচ:</span>
-            <button
-              onClick={() => demoLogin('admin')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                isAdmin
-                  ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400/50 font-extrabold'
-                  : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700'
-              }`}
-            >
-              👑 অ্যাডমিন মোড
-            </button>
-            <button
-              onClick={() => demoLogin('moderator')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                isModerator && !isAdmin
-                  ? 'bg-indigo-600 text-white ring-2 ring-indigo-400/50'
-                  : 'bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700'
-              }`}
-            >
-              🛡️ মডারেটর মোড
-            </button>
-            <button
-              onClick={() => demoLogin('member')}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-bold transition"
-            >
-              👤 সাধারণ সদস্য মোড
-            </button>
+            {pendingUsers.length > 0 ? (
+              <button
+                onClick={() => setActiveTab('pending')}
+                className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl font-bold transition flex items-center gap-1.5 animate-pulse"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                <span>{pendingUsers.length} টি নতুন মেম্বার অনুমোদন অপেক্ষমাণ</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl">
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>সমস্ত মেম্বার অনুমোদিত ও সক্রিয়</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -627,32 +701,32 @@ export default function AdminDashboard() {
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">অ্যাডমিন ও টিম লিড</span>
-            <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
-              <ShieldCheck className="w-4 h-4" />
+            <span className="text-xs font-semibold text-slate-400">অপেক্ষমাণ রিকোয়েস্ট</span>
+            <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+              <ShieldAlert className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-2xl font-black text-indigo-300">{adminCount + modCount}</p>
-          <p className="text-[11px] text-slate-500">{adminCount} অ্যাডমিন, {modCount} মডারেটর</p>
+          <p className="text-2xl font-black text-amber-300">{pendingUsers.length}</p>
+          <p className="text-[11px] text-slate-500">অনুমোদনের অপেক্ষায়</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">কাজের গ্রুপসমূহ</span>
-            <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+            <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
               <Briefcase className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-2xl font-black text-amber-300">{officeGroups.length}</p>
+          <p className="text-2xl font-black text-indigo-300">{officeGroups.length}</p>
           <p className="text-[11px] text-slate-500">পারসিস্টেন্ট গ্রুপ থ্রেড</p>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-1">
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-1 overflow-x-auto">
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
             activeTab === 'users'
               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
               : 'bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800'
@@ -663,8 +737,25 @@ export default function AdminDashboard() {
         </button>
 
         <button
+          onClick={() => setActiveTab('pending')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 relative ${
+            activeTab === 'pending'
+              ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30'
+              : 'bg-slate-900/60 hover:bg-slate-800 text-amber-400 hover:text-amber-300 border border-amber-500/30'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4" />
+          <span>মেম্বার অনুমোদন</span>
+          {pendingUsers.length > 0 && (
+            <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+              {pendingUsers.length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('groups')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
             activeTab === 'groups'
               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
               : 'bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800'
@@ -676,7 +767,7 @@ export default function AdminDashboard() {
 
         <button
           onClick={() => setActiveTab('broadcast')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
             activeTab === 'broadcast'
               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
               : 'bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800'
@@ -892,13 +983,30 @@ export default function AdminDashboard() {
 
                           {/* Status & Presence */}
                           <td className="py-3.5 px-4">
-                            <div className="space-y-1 max-w-[200px]">
+                            <div className="space-y-1.5 max-w-[200px]">
+                              {/* Account Approval / Security Badge */}
+                              <div>
+                                {usr.approval_status === 'pending_approval' || usr.auth_status === 'pending_approval' ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    ⏳ অনুমোদন অপেক্ষমাণ
+                                  </span>
+                                ) : usr.approval_status === 'suspended' ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                    🚫 স্থগিত / সাসপেন্ড
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                    ⚡ অনুমোদিত মেম্বার
+                                  </span>
+                                )}
+                              </div>
+
                               {usr.status ? (
                                 <p className="text-[11px] text-slate-200 font-medium truncate bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800">
                                   {usr.status}
                                 </p>
                               ) : (
-                                <span className="text-[11px] text-slate-500 italic">স্ট্যাটাস সেট নেই</span>
+                                <span className="text-[11px] text-slate-500 italic block">স্ট্যাটাস সেট নেই</span>
                               )}
 
                               <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
@@ -920,8 +1028,55 @@ export default function AdminDashboard() {
 
                           {/* Admin Action Buttons */}
                           <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
                               
+                              {/* Quick Approve button if pending */}
+                              {(usr.approval_status === 'pending_approval' || usr.auth_status === 'pending_approval') && (
+                                <button
+                                  onClick={() => handleApproveUser(usr)}
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1"
+                                  title="অ্যাকাউন্ট অনুমোদন করুন"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>অনুমোদন</span>
+                                </button>
+                              )}
+
+                              {/* Suspend / Reactivate button for non-chief admin */}
+                              {!isChiefAdmin && (
+                                <>
+                                  {usr.approval_status === 'suspended' ? (
+                                    <button
+                                      onClick={() => handleReactivateUser(usr)}
+                                      className="p-2 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-xl border border-emerald-600/40 transition active:scale-95"
+                                      title="পুনরায় সচল করুন"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleSuspendUser(usr)}
+                                      className="p-2 bg-amber-950/40 hover:bg-amber-600 text-amber-300 hover:text-white rounded-xl border border-amber-600/40 transition active:scale-95"
+                                      title="অ্যাকাউন্ট সাসপেন্ড করুন"
+                                    >
+                                      <Ban className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+
+                              {/* Reset Member Password */}
+                              <button
+                                onClick={() => {
+                                  setResettingUser(usr);
+                                  setNewPasswordInput('');
+                                }}
+                                className="p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 rounded-xl border border-slate-700 transition"
+                                title="পাসওয়ার্ড রিসেট বা পরিবর্তন করুন"
+                              >
+                                <Key className="w-3.5 h-3.5" />
+                              </button>
+
                               {/* Inspect Profile */}
                               <button
                                 onClick={() => setInspectUser(usr)}
@@ -973,6 +1128,122 @@ export default function AdminDashboard() {
                   অ্যাডমিনদের সম্পূর্ণ এডিটিং ও রিমুভ অধিকার রয়েছে
                 </span>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: PENDING MEMBER APPROVALS (CHIEF ADMIN CONTROL) */}
+      {activeTab === 'pending' && (
+        <div className="space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">নতুন মেম্বার রেজিস্ট্রেশন অনুমোদন</h3>
+                {pendingUsers.length > 0 && (
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black px-2 py-0.5 rounded-full">
+                    {pendingUsers.length} টি রিকোয়েস্ট
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                নিরাপত্তার স্বার্থে নতুন রেজিস্ট্রেশন করা সকল ব্যবহারকারীর অ্যাকাউন্ট ডিফল্টভাবে স্থগিত থাকে। চিফ অ্যাডমিন অনুমোদন দেওয়ার পরেই কেবল ব্যবহারকারী অ্যাপে প্রবেশ করতে পারবেন।
+              </p>
+            </div>
+
+            <button
+              onClick={loadUsers}
+              disabled={usersLoading}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs px-3 py-2 rounded-xl flex items-center gap-2 font-bold transition shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${usersLoading ? 'animate-spin' : ''}`} />
+              <span>রিফ্রেশ করুন</span>
+            </button>
+          </div>
+
+          {pendingUsers.length === 0 ? (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                <CheckCircle className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold text-white">কোনো অপেক্ষমাণ রিকোয়েস্ট নেই</h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                বর্তমানে সকল রেজিস্ট্রেশনকৃত মেম্বার ইতিমধ্যে অনুমোদিত। নতুন কোনো ব্যবহারকারী রেজিস্টার করলে সাথে সাথে এই প্যানেলে চলে আসবে।
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pendingUsers.map((pendingUsr) => (
+                <div
+                  key={pendingUsr.id || pendingUsr.email}
+                  className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4 hover:border-amber-500/50 transition shadow-lg relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-bl-full pointer-events-none" />
+                  
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-2xl shrink-0">
+                        {pendingUsr.avatar_emoji || '🧑‍💻'}
+                      </div>
+                      <div>
+                        <h4 className="text-base font-black text-white">{pendingUsr.name}</h4>
+                        <p className="text-xs text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                          <Mail className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{pendingUsr.email}</span>
+                          <button
+                            onClick={() => copyToClipboard(pendingUsr.email, 'ইমেইল')}
+                            className="p-1 hover:text-white transition"
+                            title="ইমেইল কপি করুন"
+                          >
+                            <Copy className="w-3 h-3 text-slate-500 hover:text-slate-300" />
+                          </button>
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
+                      ⏳ অপেক্ষমাণ
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">পদবি / রোল:</span>
+                      <span className="text-slate-200 font-bold">{pendingUsr.role || 'অফিস মেম্বার'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">ফোন নম্বর:</span>
+                      <span className="text-slate-300 font-mono text-[11px]">{pendingUsr.phone || 'দেওয়া হয়নি'}</span>
+                    </div>
+                    {pendingUsr.created_at && (
+                      <div className="col-span-2 text-[10px] text-slate-500 flex items-center gap-1 mt-1 border-t border-slate-800/80 pt-1">
+                        <Clock className="w-3 h-3 text-slate-500" />
+                        <span>রেজিস্ট্রেশন তারিখ: {new Date(pendingUsr.created_at).toLocaleDateString('bn-BD', { dateStyle: 'medium' })}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleApproveUser(pendingUsr)}
+                      className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-98"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>অনুমোদন দিন ও এক্সেস খুলুন</span>
+                    </button>
+
+                    <button
+                      onClick={() => setRemovingUser(pendingUsr)}
+                      className="py-2.5 px-3 bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-700/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-98"
+                      title="বাতিল ও মুছে ফেলুন"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>রিজেক্ট</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1793,6 +2064,82 @@ export default function AdminDashboard() {
                 </form>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal (Admin Super-Power) */}
+      {resettingUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-400">
+                <Key className="w-5 h-5" />
+                <h3 className="font-black text-white text-base">পাসওয়ার্ড রিসেট করুন</h3>
+              </div>
+              <button
+                onClick={() => setResettingUser(null)}
+                className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800 flex items-center gap-3">
+              <span className="text-2xl">{resettingUser.avatar_emoji || '🧑‍💻'}</span>
+              <div className="truncate">
+                <p className="font-bold text-white text-sm truncate">{resettingUser.name}</p>
+                <p className="text-xs text-slate-400 truncate">{resettingUser.email}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              সিস্টেম অ্যাডমিন হিসেবে আপনি এই মেম্বারের জন্য সরাসরি একটি নতুন পাসওয়ার্ড সেট করে দিতে পারেন। ইউজার পরবর্তীতে এই নতুন পাসওয়ার্ড দিয়ে লগইন করবেন।
+            </p>
+
+            <form onSubmit={handleConfirmResetPassword} className="space-y-4 pt-1">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর):
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="উদাঃ user12345"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNewPasswordInput('rg' + Math.floor(100000 + Math.random() * 900000))}
+                    className="absolute right-2 top-2 text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold px-2 py-1 rounded-lg border border-slate-700 transition"
+                  >
+                    অটো জেনারেট
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResettingUser(null)}
+                  disabled={resetSubmitting}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetSubmitting || !newPasswordInput.trim()}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-600/20 transition disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>{resetSubmitting ? 'সেভ হচ্ছে...' : 'নতুন পাসওয়ার্ড সেট করুন'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
