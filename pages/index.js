@@ -8,7 +8,7 @@ import { registerPushNotifications, sendPushForMessage, sendTestPushNotification
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
 import ImageMessageBubble from '../components/ImageMessageBubble';
 import VideoCallModal from '../components/VideoCallModal';
-import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle, Phone, PhoneCall, PhoneOff, Video, VideoOff, Info, MoreHorizontal, ThumbsUp, MessageCircle, SlidersHorizontal, Share2, CornerDownRight, Download, ZoomIn, Settings, Crown, LogOut, UserMinus, ShieldCheck, Smartphone, SendHorizontal } from 'lucide-react';
+import { Send, Hash, User, Users, Smile, Shield, Sparkles, MessageSquare, Edit3, Check, CheckCheck, AlertTriangle, Trash2, X, Link as LinkIcon, UserCheck, ChevronDown, CheckCircle, Image as ImageIcon, Pin, Plus, FolderPlus, MoreVertical, Database, Copy, Code, Camera, Upload, Volume2, Sun, Moon, Search, UserPlus, Mic, Square, Play, Pause, VolumeX, Bell, Clock, Calendar, AlertCircle, Phone, PhoneCall, PhoneOff, Video, VideoOff, Info, MoreHorizontal, ThumbsUp, MessageCircle, SlidersHorizontal, Share2, CornerDownRight, Download, ZoomIn, Settings, Crown, LogOut, UserMinus, ShieldCheck, Smartphone, SendHorizontal, ArrowLeft, ArrowRight } from 'lucide-react';
 
 const GROUP_PRESET_EMOJIS = [
   '💬', '🚀', '🔥', '🎮', '⚽', '💡', '🎉', '❤️',
@@ -382,8 +382,9 @@ export default function Home() {
   const [onlineUsers, setOnlineUsers] = useState({});
   const [isOnlineListOpen, setIsOnlineListOpen] = useState(false);
 
-  // Modern Messenger UI States: Tabs, Call Simulation, Info Drawer
+  // Modern Messenger UI States: Tabs, Call Simulation, Info Drawer, Mobile Layout
   const [sidebarTab, setSidebarTab] = useState('all'); // 'all' | 'dms' | 'groups'
+  const [mobileView, setMobileView] = useState('chat'); // 'contacts' | 'chat'
   const [isInfoDrawerOpen, setIsInfoDrawerOpen] = useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [videoCallConfig, setVideoCallConfig] = useState({
@@ -649,6 +650,7 @@ export default function Home() {
     }
 
     setActiveRoom(dmId);
+    setMobileView('chat');
     if (typeof window !== 'undefined') {
       localStorage.setItem('rg_active_room', dmId);
     }
@@ -1219,6 +1221,7 @@ export default function Home() {
     }
     setActiveRoom(roomId);
     setRoomAccessError(null);
+    setMobileView('chat');
     if (typeof window !== 'undefined') {
       localStorage.setItem('rg_active_room', roomId);
       const savedDraft = localStorage.getItem(`rg_chat_draft_${roomId}`) || '';
@@ -2041,9 +2044,38 @@ export default function Home() {
   const onlineCount = onlineUsersList.length;
 
   return (
-      <div className="flex-1 flex flex-col lg:flex-row w-full h-[calc(100vh-3.5rem)] min-h-[500px] overflow-hidden bg-slate-900 border-x border-slate-800/80" id="chat-applet">
-        {/* Left Sidebar - Channels & Profiles */}
-        <div className="w-full lg:w-80 bg-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col flex-shrink-0 h-auto lg:h-full overflow-hidden">
+      <div 
+        className={`flex-1 w-full h-[calc(100vh-3.5rem)] min-h-[500px] overflow-hidden bg-slate-900 border-x border-slate-800/80 transition-all duration-200
+          grid grid-cols-1 ${
+            isInfoDrawerOpen 
+              ? 'md:grid-cols-[280px_1fr] lg:grid-cols-[320px_1fr_288px] xl:grid-cols-[350px_1fr_320px]' 
+              : 'md:grid-cols-[280px_1fr] lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr]'
+          }`} 
+        id="chat-applet"
+      >
+        {/* Left Sidebar - Contacts & Groups */}
+        <aside 
+          aria-label="পরিচিতি ও গ্রুপ সাইডবার"
+          className={`w-full md:w-auto bg-slate-950 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col flex-shrink-0 h-full overflow-hidden ${
+            mobileView === 'chat' ? 'hidden md:flex' : 'flex'
+          }`}
+        >
+          {/* Mobile Quick Switch Bar to Jump to Active Chat */}
+          <div className="md:hidden px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-400" />
+              <span className="text-xs font-bold text-white">পরিচিতি ও গ্রুপ তালিকা</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileView('chat')}
+              className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-sm"
+              title="বর্তমান চ্যাট উইন্ডোতে ফিরে যান"
+            >
+              <span>বর্তমান চ্যাট</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         
         {/* Profile Card */}
         <div className="p-4 border-b border-slate-800 bg-slate-900/50">
@@ -2228,12 +2260,52 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Contacts & Groups Navigation Tabs */}
+        <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-800 bg-slate-950/70 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setSidebarTab('all')}
+            className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              sidebarTab === 'all'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <span>সব ({filteredOfficeGroups.length + filteredOfficeMembers.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarTab('dms')}
+            className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              sidebarTab === 'dms'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>পরিচিতি ({filteredOfficeMembers.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarTab('groups')}
+            className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              sidebarTab === 'groups'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>গ্রুপ ({filteredOfficeGroups.length})</span>
+          </button>
+        </div>
+
         {/* Office Messenger Content Feed */}
-        <div className="p-3 flex-1 overflow-y-auto space-y-5">
+        <div className="p-3 flex-1 overflow-y-auto space-y-5 custom-scrollbar">
           
           {/* Section 1: Office Work Groups */}
-          <div>
-            <div className="flex items-center justify-between px-1 mb-2.5">
+          {(sidebarTab === 'all' || sidebarTab === 'groups') && (
+            <div>
+              <div className="flex items-center justify-between px-1 mb-2.5">
               <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-indigo-400" />
                 <span>কাজের গ্রুপসমূহ ({filteredOfficeGroups.length})</span>
@@ -2341,10 +2413,12 @@ export default function Home() {
               </div>
             )}
           </div>
+          )}
 
           {/* Section 2: Office Registered Members & Direct Chat */}
-          <div className="pt-3 border-t border-slate-800/80">
-            <div className="flex items-center justify-between px-1 mb-2.5">
+          {(sidebarTab === 'all' || sidebarTab === 'dms') && (
+            <div className={sidebarTab === 'all' ? 'pt-3 border-t border-slate-800/80' : ''}>
+              <div className="flex items-center justify-between px-1 mb-2.5">
               <div>
                 <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                   <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -2489,16 +2563,41 @@ export default function Home() {
               </div>
             )}
           </div>
+          )}
         </div>
-      </div>
 
-      {/* Right Chat Area */}
-      <div className={`flex-1 flex flex-col h-full overflow-hidden relative min-w-0 transition-colors duration-200 ${isDarkMode ? 'bg-slate-900/40' : 'bg-slate-50'}`}>
+        {/* Sidebar Presence Footer */}
+        <div className="p-2.5 px-3 border-t border-slate-800/80 bg-slate-950 flex items-center justify-between flex-shrink-0 text-xs">
+          <div className="flex items-center gap-2 text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] font-medium">{onlineCount} জন অনলাইনে সক্রিয়</span>
+          </div>
+          <span className="text-[10px] text-slate-500 font-mono">লাইভ ড্যাশবোর্ড</span>
+        </div>
+      </aside>
+
+      {/* Right Main Chat Area */}
+      <main 
+        aria-label="প্রধান চ্যাট উইন্ডো"
+        className={`flex-1 flex flex-col h-full overflow-hidden relative min-w-0 transition-colors duration-200 ${
+          mobileView === 'contacts' ? 'hidden md:flex' : 'flex'
+        } ${isDarkMode ? 'bg-slate-900/40' : 'bg-slate-50'}`}
+      >
         {/* Modern Facebook Messenger Style Chat Header */}
-        <div className={`px-4 md:px-6 py-3 border-b flex items-center justify-between flex-shrink-0 z-10 transition-colors duration-200 ${isDarkMode ? 'border-slate-800 bg-slate-900/95 backdrop-blur-md' : 'border-slate-200 bg-white shadow-sm'}`}>
+        <header className={`px-3 sm:px-4 md:px-6 py-3 border-b flex items-center justify-between flex-shrink-0 z-10 transition-colors duration-200 ${isDarkMode ? 'border-slate-800 bg-slate-900/95 backdrop-blur-md' : 'border-slate-200 bg-white shadow-sm'}`}>
           
           {/* Header Left: Avatar & Meta */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {/* Mobile Back Button to Contacts */}
+            <button
+              type="button"
+              onClick={() => setMobileView('contacts')}
+              className="md:hidden p-2 -ml-1 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition flex items-center gap-1 text-xs font-bold shrink-0 shadow-sm active:scale-95"
+              title="পরিচিতি ও গ্রুপ তালিকায় ফিরুন"
+            >
+              <ArrowLeft className="w-4 h-4 text-blue-400" />
+              <span className="hidden xs:inline">তালিকা</span>
+            </button>
             {currentRoomObj.isDM ? (
               /* 1-on-1 Personal Messenger Header */
               <div className="flex items-center gap-3 min-w-0">
@@ -2699,7 +2798,7 @@ export default function Home() {
               {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
             </button>
           </div>
-        </div>
+        </header>
 
         {/* Background Messenger Push Notification Status Bar */}
         <div className={`px-4 py-1.5 border-b text-xs flex flex-wrap items-center justify-between gap-2 transition-colors duration-200 z-10 ${
@@ -3443,13 +3542,16 @@ export default function Home() {
             )}
           </div>
         </form>
-      </div>
+      </main>
 
       {/* Messenger Right Info Drawer / Details Sidebar */}
       {isInfoDrawerOpen && (
-        <div className={`w-full lg:w-72 border-t lg:border-t-0 lg:border-l flex flex-col flex-shrink-0 h-auto lg:h-full overflow-y-auto z-20 animate-in slide-in-from-right duration-200 ${
-          isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-200' : 'border-slate-200 bg-white text-slate-800'
-        }`}>
+        <aside 
+          aria-label="চ্যাট বিবরণ ও সেটিংস সাইডবার"
+          className={`w-full lg:w-auto border-t lg:border-t-0 lg:border-l flex flex-col flex-shrink-0 h-full overflow-y-auto z-20 animate-in slide-in-from-right duration-200 ${
+            isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-200' : 'border-slate-200 bg-white text-slate-800'
+          }`}
+        >
           {/* Drawer Header */}
           <div className="p-4 border-b border-slate-800/80 flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
@@ -3705,7 +3807,7 @@ export default function Home() {
               </button>
             </div>
           </div>
-        </div>
+        </aside>
       )}
 
       {/* Video / Audio Call Simulation with MediaDevices Preview */}
