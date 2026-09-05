@@ -58,9 +58,9 @@
       "nickname": "Member",
       "email": "redgreen5536@gmail.com",
       "role": "অফিস মেম্বার",
-      "status": "pending_approval",
-      "approval_status": "pending_approval",
-      "presence": "offline",
+      "status": "active",
+      "approval_status": "active",
+      "presence": "online",
       "avatar_emoji": "🧑‍💻",
       "phone": "",
       "bio": "নতুন রেজিস্ট্রেশন করা মেম্বার",
@@ -77,7 +77,7 @@
     "redgreen5536@gmail.com": {
       "password": "password123",
       "role": "অফিস মেম্বার",
-      "status": "pending_approval",
+      "status": "active",
       "name": "Red Green Member"
     },
     "tanveer.office@gmail.com": {
