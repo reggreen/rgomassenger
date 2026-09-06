@@ -568,27 +568,8 @@ export function AuthProvider({ children }) {
       const initialStatus = isOwner ? 'active' : 'pending_approval';
       const initialRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার';
 
-      // 1. Send to Central Server API (Cross-browser & cross-device persistence)
-      try {
-        const apiRes = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: cleanName,
-            email: cleanEmail,
-            password: cleanPassword,
-            role: initialRole
-          })
-        });
-        const apiData = await apiRes.json();
-        if (!apiRes.ok && apiData && apiData.message) {
-          setLoading(false);
-          return { success: false, message: apiData.message };
-        }
-      } catch (netErr) {
-        console.warn('Central server register notice, keeping local fallback:', netErr);
-      }
-
+      // 1. Direct Local and LocalStorage persistence for Vercel/Client
+      // No missing serverless API route dependencies needed.
       const creds = getAuthCredentials();
 
       // Check if email already registered locally
@@ -812,19 +793,6 @@ export function AuthProvider({ children }) {
   // Get Registered Users List (Office Members Directory)
   const getRegisteredUsers = async () => {
     try {
-      let serverList = [];
-      try {
-        const res = await fetch('/api/auth/users');
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && Array.isArray(json.users)) {
-            serverList = json.users;
-          }
-        }
-      } catch (netErr) {
-        console.warn('Could not fetch server users, using local cache:', netErr);
-      }
-
       let localList = [];
       if (typeof window !== 'undefined') {
         const stored = localStorage.getItem('rg_all_users');
@@ -833,7 +801,7 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // Merge with Appwrite profiles if configured
+      // Merge with Supabase/Appwrite profiles if configured
       let remoteProfiles = [];
       try {
         const { appwrite } = await import('../lib/appwrite');
@@ -845,21 +813,10 @@ export function AuthProvider({ children }) {
 
       const combinedMap = new Map();
 
-      // 1. Seed server users first (source of truth from central API)
-      if (serverList && Array.isArray(serverList)) {
-        serverList.forEach(u => {
-          if (u && u.email && !isEmailRemoved(u.email)) {
-            combinedMap.set(u.email.toLowerCase(), u);
-          }
-        });
-      }
-
-      // 2. Always include Default Registered Users (including Developer/Chief Admin)
+      // 1. Always include Default Registered Users (including Developer/Chief Admin)
       DEFAULT_REGISTERED_USERS.forEach(u => {
         if (u && u.email && !isEmailRemoved(u.email)) {
-          if (!combinedMap.has(u.email.toLowerCase())) {
-            combinedMap.set(u.email.toLowerCase(), u);
-          }
+          combinedMap.set(u.email.toLowerCase(), u);
         }
       });
 
