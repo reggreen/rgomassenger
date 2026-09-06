@@ -629,7 +629,7 @@ export function AuthProvider({ children }) {
         return { 
           success: true, 
           pendingApproval: true,
-          message: 'আপনার অ্যাকাউন্ট সফলভাবে রেজিস্টার হয়েছে এবং চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদনের অপেক্ষায় রয়েছে। অ্যাডমিন এপ্রুভ করলে আপনি লগইন করতে পারবেন।' 
+          message: 'আপনার অ্যাকাউন্ট সফলভাবে রেজিস্টার হয়েছে এবং চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষায় রয়েছে। অ্যাডমিন এপ্রুভ করলে আপনি লগইন করতে পারবেন।' 
         };
       }
 
