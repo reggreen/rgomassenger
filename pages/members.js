@@ -41,7 +41,7 @@ const DEFAULT_OFFICE_GROUPS = [
     name: 'অফিস কাজের সার্বিক আপডেট',
     desc: 'অফিসের প্রতিদিনের কাজের সার্বিক আপডেট ও রিপোর্ট শেয়ারিং গ্রুপ',
     emoji: '💼',
-    createdBy: 'redgreenonline1013@gmail.com',
+    createdBy: 'redgreenonline2023@gmail.com',
     members: ['ALL'],
     createdAt: new Date().toISOString()
   }

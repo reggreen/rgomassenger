@@ -308,7 +308,7 @@ export default function LoginPage() {
                     </button>
                   </div>
                   <p className="text-[10px] text-amber-400/90 mt-1.5 flex items-center gap-1">
-                    <span>⚠️ নতুন মেম্বার হিসেবে রেজিস্ট্রেশন করলে চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদন প্রয়োজন হবে।</span>
+                    <span>⚠️ নতুন মেম্বার হিসেবে রেজিস্ট্রেশন করলে চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদন প্রয়োজন হবে।</span>
                   </p>
                 </div>
               )}
@@ -338,7 +338,7 @@ export default function LoginPage() {
 
             {/* Footer help info */}
             <div className="p-4 bg-slate-950/80 border-t border-slate-800 text-center text-[11px] text-slate-400 space-y-1">
-              <p>চিফ অ্যাডমিন যোগাযোগ: <span className="font-mono text-blue-400 font-bold">redgreenonline1013@gmail.com</span></p>
+              <p>চিফ অ্যাডমিন যোগাযোগ: <span className="font-mono text-blue-400 font-bold">redgreenonline2023@gmail.com</span></p>
               <p className="text-[10px] text-slate-500">অনুমোদন ছাড়া কেউ অ্যাপে প্রবেশ করতে পারবে না।</p>
             </div>
 
