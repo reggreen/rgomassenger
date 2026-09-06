@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/router';
-import { isAppwriteConfigured } from '../lib/appwrite';
 import {
   Lock,
   Mail,
@@ -13,10 +12,8 @@ import {
   CheckCircle,
   AlertCircle,
   ShieldCheck,
-  ShieldAlert,
   LogOut,
   Clock,
-  KeyRound,
   Sparkles
 } from 'lucide-react';
 
@@ -35,48 +32,6 @@ export default function LoginPage() {
 
   const [message, setMessage] = useState({ type: '', text: '', isPending: false });
   const [submitting, setSubmitting] = useState(false);
-
-  const handleQuickLogin = async (quickEmail, quickPassword) => {
-    setEmail(quickEmail);
-    setPassword(quickPassword);
-    setMessage({ type: '', text: '', isPending: false });
-    setSubmitting(true);
-    const res = await login(quickEmail, quickPassword);
-    if (res.success) {
-      setMessage({ type: 'success', text: res.message });
-      router.push('/dashboard');
-    } else {
-      setMessage({
-        type: 'error',
-        text: res.message,
-        isPending: res.pendingApproval || false
-      });
-    }
-    setSubmitting(false);
-  };
-
-  const handleQuickApproveAndLogin = async (targetEmail) => {
-    setSubmitting(true);
-    try {
-      await fetch('/api/auth/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminEmail: 'redgreenonline1013@gmail.com',
-          targetEmail: targetEmail,
-          status: 'active'
-        })
-      });
-      setMessage({ type: 'success', text: 'অ্যাকাউন্ট সফলভাবে অনুমোদন করা হয়েছে! লগইন হচ্ছে...' });
-      const res = await login(targetEmail, password || 'password123');
-      if (res.success) {
-        router.push('/dashboard');
-      }
-    } catch (e) {
-      setMessage({ type: 'error', text: 'অনুমোদন ব্যর্থ হয়েছে।' });
-    }
-    setSubmitting(false);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -123,6 +78,7 @@ export default function LoginPage() {
           // Clear inputs after successful pending registration
           setPassword('');
           setConfirmPassword('');
+          setName('');
         } else {
           setMessage({ type: 'success', text: res.message });
           router.push('/dashboard');
@@ -206,7 +162,7 @@ export default function LoginPage() {
               <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-mono">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="text-slate-300">
-                  অ্যাডমিন নিয়ন্ত্রিত সিকিউর অথেন্টিকেশন
+                  অ্যাডমিন অনুমোদিত সিকিউর সিস্টেম
                 </span>
               </div>
             </div>
@@ -257,58 +213,12 @@ export default function LoginPage() {
                     )}
                     <div className="flex-1">{message.text}</div>
                   </div>
-
-                  {message.isPending && (
-                    <button
-                      type="button"
-                      onClick={() => handleQuickApproveAndLogin(email)}
-                      className="mt-1 text-[11px] font-bold px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 flex items-center justify-center gap-1.5 transition active:scale-98"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>চিফ অ্যাডমিন হিসেবে সরাসরি অনুমোদন করুন ও প্রবেশ করুন</span>
-                    </button>
-                  )}
                 </div>
               </div>
             )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-
-              {/* Quick 1-Click Login Shortcuts */}
-              {activeTab === 'login' && (
-                <div className="p-3 bg-slate-950/80 rounded-2xl border border-slate-800/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>দ্রুত ১-ক্লিকে টেস্ট লগইন:</span>
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickLogin('redgreenonline1013@gmail.com', 'Admin@RG2026!')}
-                      className="text-left px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-blue-900/30 border border-slate-800 hover:border-blue-500/50 transition group"
-                    >
-                      <div className="text-[11px] font-bold text-slate-200 group-hover:text-blue-300 flex items-center gap-1">
-                        <span>👑 চিফ অ্যাডমিন</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 font-mono">redgreenonline1013@...</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleQuickLogin('redgreen5536@gmail.com', 'password123')}
-                      className="text-left px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-emerald-900/30 border border-slate-800 hover:border-emerald-500/50 transition group"
-                    >
-                      <div className="text-[11px] font-bold text-slate-200 group-hover:text-emerald-300 flex items-center gap-1">
-                        <span>🧑‍💻 অফিস মেম্বার (Active)</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 font-mono">redgreen5536@...</div>
-                    </button>
-                  </div>
-                </div>
-              )}
               
               {/* Name (Only on Register) */}
               {activeTab === 'register' && (
@@ -321,10 +231,10 @@ export default function LoginPage() {
                     <input
                       type="text"
                       required
-                      placeholder="যেমন: সাইদুল ইসলাম"
+                      placeholder="আপনার নাম লিখুন"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white outline-none transition"
+                      className="w-full bg-slate-950 border border-slate-750 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white outline-none transition"
                     />
                   </div>
                 </div>
@@ -343,23 +253,16 @@ export default function LoginPage() {
                     placeholder="example@gmail.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white outline-none transition"
+                    className="w-full bg-slate-950 border border-slate-750 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white outline-none transition font-mono"
                   />
                 </div>
               </div>
 
               {/* Password */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-300">
-                    পাসওয়ার্ড <span className="text-rose-400">*</span>
-                  </label>
-                  {activeTab === 'login' && (
-                    <span className="text-[11px] text-slate-500">
-                      চিফ অ্যাডমিন বা মেম্বার পাসওয়ার্ড
-                    </span>
-                  )}
-                </div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  পাসওয়ার্ড <span className="text-rose-400">*</span>
+                </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                   <input
@@ -368,12 +271,12 @@ export default function LoginPage() {
                     placeholder="পাসওয়ার্ড লিখুন (কমপক্ষে ৬ অক্ষর)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white outline-none transition"
+                    className="w-full bg-slate-950 border border-slate-750 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white outline-none transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white transition"
+                    className="absolute right-3.5 top-3 text-slate-500 hover:text-slate-300 transition"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -384,47 +287,40 @@ export default function LoginPage() {
               {activeTab === 'register' && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    পাসওয়ার্ড নিশ্চিত করুন (Confirm Password) <span className="text-rose-400">*</span>
+                    পাসওয়ার্ড নিশ্চিত করুন <span className="text-rose-400">*</span>
                   </label>
                   <div className="relative">
-                    <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                    <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                     <input
                       type={showConfirmPassword ? 'text' : 'password'}
                       required
-                      placeholder="একই পাসওয়ার্ড পুনরায় লিখুন"
+                      placeholder="পুনরায় পাসওয়ার্ড লিখুন"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white outline-none transition"
+                      className="w-full bg-slate-950 border border-slate-750 focus:border-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white outline-none transition"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-white transition"
+                      className="absolute right-3.5 top-3 text-slate-500 hover:text-slate-300 transition"
                     >
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  <p className="text-[10px] text-amber-400/90 mt-1.5 flex items-center gap-1">
+                    <span>⚠️ নতুন মেম্বার হিসেবে রেজিস্ট্রেশন করলে চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদন প্রয়োজন হবে।</span>
+                  </p>
                 </div>
               )}
 
-              {/* Info Notice for Registration */}
-              {activeTab === 'register' && (
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 flex items-start gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>
-                    রেজিস্ট্রেশন সম্পন্ন করার সাথে সাথে আপনার অ্যাকাউন্টটি সক্রিয় হবে এবং নিজস্ব প্রোফাইল তৈরি হয়ে যাবে।
-                  </span>
-                </div>
-              )}
-
-              {/* Submit */}
+              {/* Submit Button */}
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition active:scale-98 disabled:opacity-50 mt-2"
+                className="w-full bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition disabled:opacity-50 mt-2"
               >
                 {submitting ? (
-                  <span className="inline-block animate-spin font-bold text-sm">↻</span>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 ) : activeTab === 'login' ? (
                   <>
                     <LogIn className="w-4 h-4" />
@@ -433,27 +329,23 @@ export default function LoginPage() {
                 ) : (
                   <>
                     <UserPlus className="w-4 h-4" />
-                    <span>অ্যাকাউন্ট তৈরি করুন ও প্রবেশ করুন</span>
+                    <span>রেজিস্ট্রেশন রিকোয়েস্ট পাঠান</span>
                   </>
                 )}
               </button>
 
-              {/* Admin Contact Information */}
-              <div className="pt-3 border-t border-slate-800/80 text-center">
-                <p className="text-[11px] text-slate-500">
-                  চিফ অ্যাডমিন নিয়ন্ত্রণাধীন: <span className="text-slate-400 font-mono">redgreenonline1013@gmail.com</span>
-                </p>
-                <p className="text-[10px] text-slate-600 mt-0.5">
-                  পাসওয়ার্ড ভুলে গেলে বা কোনো সমস্যার জন্য অ্যাডমিনের সাথে যোগাযোগ করুন।
-                </p>
-              </div>
             </form>
+
+            {/* Footer help info */}
+            <div className="p-4 bg-slate-950/80 border-t border-slate-800 text-center text-[11px] text-slate-400 space-y-1">
+              <p>চিফ অ্যাডমিন যোগাযোগ: <span className="font-mono text-blue-400 font-bold">redgreenonline1013@gmail.com</span></p>
+              <p className="text-[10px] text-slate-500">অনুমোদন ছাড়া কেউ অ্যাপে প্রবেশ করতে পারবে না।</p>
+            </div>
+
           </div>
         )}
+
       </div>
     </div>
   );
 }
-
-LoginPage.getLayout = (page) => page;
-

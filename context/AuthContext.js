@@ -566,7 +566,7 @@ export function AuthProvider({ children }) {
       }
 
       const isOwner = isChiefAdminEmail(cleanEmail);
-      const initialStatus = 'active';
+      const initialStatus = isOwner ? 'active' : 'pending_approval';
       const initialRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার';
 
       // 1. Send to Central Server API (Cross-browser & cross-device persistence)
@@ -624,7 +624,17 @@ export function AuthProvider({ children }) {
 
       await saveRegisteredUser(newUserProfile);
 
-      // Automatically log the user in so their profile is created immediately
+      // Do not auto-login if pending approval
+      if (!isOwner) {
+        setLoading(false);
+        return { 
+          success: true, 
+          pendingApproval: true,
+          message: 'আপনার অ্যাকাউন্ট সফলভাবে রেজিস্টার হয়েছে এবং চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদনের অপেক্ষায় রয়েছে। অ্যাডমিন এপ্রুভ করলে আপনি লগইন করতে পারবেন।' 
+        };
+      }
+
+      // Automatically log the user in for Chief Admin
       const loggedUser = { ...newUserProfile, loggedIn: true };
       setUser(loggedUser);
       localStorage.setItem('rg_current_user', JSON.stringify(loggedUser));
@@ -632,7 +642,7 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return { 
         success: true, 
-        message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! আপনার প্রোফাইল প্রস্তুত।' 
+        message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে!' 
       };
     } catch (error) {
       setLoading(false);
