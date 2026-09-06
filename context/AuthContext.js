@@ -3,8 +3,30 @@ import { account, ID, isAppwriteConfigured } from '../lib/appwrite';
 
 const AuthContext = createContext();
 
+export const CHIEF_ADMIN_EMAIL = 'redgreenonline1013@gmail.com';
+export const LEGACY_ADMIN_EMAIL = 'redgreenonline2023@gmail.com';
+
+export const isChiefAdminEmail = (email) => {
+  if (!email) return false;
+  const clean = email.toLowerCase().trim();
+  return clean === CHIEF_ADMIN_EMAIL || clean === LEGACY_ADMIN_EMAIL;
+};
+
 export const DEFAULT_ADMIN_ACCOUNT = {
   id: 'usr_admin_01',
+  name: 'MD SHANTO',
+  nickname: 'Shanto',
+  email: 'redgreenonline1013@gmail.com',
+  role: 'অ্যাপ ডেভলপার ও চিফ অ্যাডমিন',
+  status: 'সিস্টেম মেইন্টেন্যান্স ও অ্যাক্টিভ ⚡',
+  presence: 'online',
+  avatar_emoji: '🧑‍💻',
+  phone: '+880 1700-000000',
+  bio: 'অফিস মেসেঞ্জারের ডেভলপার ও চিফ অ্যাডমিন।'
+};
+
+export const LEGACY_ADMIN_ACCOUNT = {
+  id: 'usr_admin_02',
   name: 'MD SHANTO',
   nickname: 'Shanto',
   email: 'redgreenonline2023@gmail.com',
@@ -18,6 +40,7 @@ export const DEFAULT_ADMIN_ACCOUNT = {
 
 export const DEFAULT_REGISTERED_USERS = [
   DEFAULT_ADMIN_ACCOUNT,
+  LEGACY_ADMIN_ACCOUNT,
   {
     id: 'usr_mem_tanveer',
     name: 'তানভীর আহমেদ',
@@ -139,7 +162,7 @@ export function AuthProvider({ children }) {
     if (!userObj || !userObj.email) return;
     try {
       // Security Enforcement: Only official owner email can be assigned default Admin
-      const isOwner = userObj.email.toLowerCase() === 'redgreenonline2023@gmail.com';
+      const isOwner = isChiefAdminEmail(userObj.email);
       const safeRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : (userObj.role || 'অফিস মেম্বার');
       const safeUserObj = { ...userObj, role: safeRole };
 
@@ -185,7 +208,7 @@ export function AuthProvider({ children }) {
               await logout();
               return;
             }
-            const isOwner = appwriteUser.email.toLowerCase() === 'redgreenonline2023@gmail.com';
+            const isOwner = isChiefAdminEmail(appwriteUser.email);
             const mappedUser = {
               id: appwriteUser.$id,
               name: appwriteUser.name || (isOwner ? DEFAULT_ADMIN_ACCOUNT.name : 'অফিস মেম্বার'),
@@ -240,12 +263,28 @@ export function AuthProvider({ children }) {
     try {
       const stored = localStorage.getItem('rg_auth_credentials');
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (!parsed['redgreenonline1013@gmail.com']) {
+          parsed['redgreenonline1013@gmail.com'] = {
+            password: 'Admin@RG2026!',
+            role: DEFAULT_ADMIN_ACCOUNT.role,
+            status: 'active',
+            name: DEFAULT_ADMIN_ACCOUNT.name
+          };
+          localStorage.setItem('rg_auth_credentials', JSON.stringify(parsed));
+        }
+        return parsed;
       }
     } catch (e) {
       console.error('Error reading auth credentials:', e);
     }
     const defaultCreds = {
+      'redgreenonline1013@gmail.com': {
+        password: 'Admin@RG2026!',
+        role: DEFAULT_ADMIN_ACCOUNT.role,
+        status: 'active',
+        name: DEFAULT_ADMIN_ACCOUNT.name
+      },
       'redgreenonline2023@gmail.com': {
         password: 'Admin@RG2026!',
         role: DEFAULT_ADMIN_ACCOUNT.role,
@@ -311,7 +350,7 @@ export function AuthProvider({ children }) {
       }
 
       const creds = getAuthCredentials();
-      const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+      const isOwner = isChiefAdminEmail(cleanEmail);
 
       // 1. Try Central Server API verification first (Centralized cross-device authentication)
       try {
@@ -337,7 +376,7 @@ export function AuthProvider({ children }) {
           return {
             success: false,
             pendingApproval: true,
-            message: apiData.message || 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।'
+            message: apiData.message || 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।'
           };
         }
 
@@ -434,7 +473,7 @@ export function AuthProvider({ children }) {
           return { 
             success: false, 
             pendingApproval: true,
-            message: 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।' 
+            message: 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।' 
           };
         }
 
@@ -487,7 +526,7 @@ export function AuthProvider({ children }) {
     const roleStr = (user.role || '').toLowerCase();
     const emailStr = (user.email || '').toLowerCase();
 
-    if (roleStr.includes('অ্যাডমিন') || roleStr.includes('admin') || roleStr.includes('ডেভলপার') || emailStr === 'redgreenonline2023@gmail.com') {
+    if (roleStr.includes('অ্যাডমিন') || roleStr.includes('admin') || roleStr.includes('ডেভলপার') || isChiefAdminEmail(emailStr)) {
       return 'admin';
     }
     if (roleStr.includes('মডারেটর') || roleStr.includes('moderator')) {
@@ -500,7 +539,7 @@ export function AuthProvider({ children }) {
   const isModerator = isAdmin || getUserRoleType() === 'moderator';
   const userRole = getUserRoleType();
 
-  // Register Handler with Mandatory Password and Admin Approval Workflow
+  // Register Handler with Mandatory Password and Immediate Active Profile Access
   const register = async (name, email, password) => {
     setLoading(true);
     try {
@@ -526,8 +565,8 @@ export function AuthProvider({ children }) {
         return { success: false, message: 'আপনার অ্যাকাউন্টটি অফিস অ্যাডমিন কর্তৃক রিমুভ করা হয়েছে।' };
       }
 
-      const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
-      const initialStatus = isOwner ? 'active' : 'pending_approval';
+      const isOwner = isChiefAdminEmail(cleanEmail);
+      const initialStatus = 'active';
       const initialRole = isOwner ? DEFAULT_ADMIN_ACCOUNT.role : 'অফিস মেম্বার';
 
       // 1. Send to Central Server API (Cross-browser & cross-device persistence)
@@ -579,27 +618,21 @@ export function AuthProvider({ children }) {
         phone: '',
         bio: 'নতুন অফিস মেম্বার',
         approval_status: initialStatus,
+        status: 'active',
         registeredAt: new Date().toISOString()
       };
 
       await saveRegisteredUser(newUserProfile);
 
-      // If Owner registers, log them in automatically
-      if (isOwner) {
-        const ownerUser = { ...newUserProfile, loggedIn: true };
-        setUser(ownerUser);
-        localStorage.setItem('rg_current_user', JSON.stringify(ownerUser));
-        localStorage.setItem('rg_username', ownerUser.name);
-        setLoading(false);
-        return { success: true, message: 'চিফ অ্যাডমিন অ্যাকাউন্ট সফলভাবে তৈরি ও লগইন হয়েছে!' };
-      }
-
-      // Regular members require Admin Approval before logging in
+      // Automatically log the user in so their profile is created immediately
+      const loggedUser = { ...newUserProfile, loggedIn: true };
+      setUser(loggedUser);
+      localStorage.setItem('rg_current_user', JSON.stringify(loggedUser));
+      localStorage.setItem('rg_username', loggedUser.name);
       setLoading(false);
       return { 
         success: true, 
-        pendingApproval: true,
-        message: 'রেজিস্ট্রেশন সফল হয়েছে! চিফ অ্যাডমিন (redgreenonline2023@gmail.com) অনুমোদন করার পর আপনি লগইন করতে পারবেন।' 
+        message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! আপনার প্রোফাইল প্রস্তুত।' 
       };
     } catch (error) {
       setLoading(false);
@@ -619,7 +652,7 @@ export function AuthProvider({ children }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            adminEmail: user?.email || 'redgreenonline2023@gmail.com',
+            adminEmail: user?.email || 'redgreenonline1013@gmail.com',
             targetEmail: cleanEmail,
             status: 'active'
           })
@@ -650,7 +683,7 @@ export function AuthProvider({ children }) {
     try {
       if (!userEmail) return { success: false, message: 'ইমেইল পাওয়া যায়নি।' };
       const cleanEmail = userEmail.toLowerCase();
-      if (cleanEmail === 'redgreenonline2023@gmail.com') {
+      if (isChiefAdminEmail(cleanEmail)) {
         return { success: false, message: 'চিফ অ্যাডমিন অ্যাকাউন্ট সাসপেন্ড করা যাবে না।' };
       }
 
@@ -660,7 +693,7 @@ export function AuthProvider({ children }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            adminEmail: user?.email || 'redgreenonline2023@gmail.com',
+            adminEmail: user?.email || 'redgreenonline1013@gmail.com',
             targetEmail: cleanEmail,
             status: 'suspended'
           })
@@ -728,7 +761,7 @@ export function AuthProvider({ children }) {
     const currentCred = creds[cleanEmail];
     
     // Verify old password
-    const isOwner = cleanEmail === 'redgreenonline2023@gmail.com';
+    const isOwner = isChiefAdminEmail(cleanEmail);
     let isOldPassMatch = currentCred && currentCred.password === oldPassword;
     if (isOwner && !isOldPassMatch && (oldPassword === 'Admin@RG2026!' || oldPassword === '12345678')) {
       isOldPassMatch = true;
@@ -842,17 +875,39 @@ export function AuthProvider({ children }) {
       }
 
       const creds = getAuthCredentials();
-      const allUsers = Array.from(combinedMap.values()).map(u => {
+      const seenIds = new Set();
+      const allUsers = Array.from(combinedMap.values()).map((u, idx) => {
         const cleanEmail = u.email ? u.email.toLowerCase() : '';
         const userCred = creds[cleanEmail];
-        const status = u.approval_status || u.status || userCred?.status || (cleanEmail === 'redgreenonline2023@gmail.com' ? 'active' : 'active');
+        const status = u.approval_status || u.status || userCred?.status || (isChiefAdminEmail(cleanEmail) ? 'active' : 'active');
+        
+        let uniqueId = u.id;
+        if (cleanEmail === 'redgreenonline2023@gmail.com' && (!uniqueId || uniqueId === 'usr_admin_01')) {
+          uniqueId = 'usr_admin_02';
+        } else if (cleanEmail === 'redgreenonline1013@gmail.com') {
+          uniqueId = 'usr_admin_01';
+        }
+        
+        if (!uniqueId || seenIds.has(uniqueId)) {
+          uniqueId = cleanEmail ? `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}` : `usr_id_${idx}_${Date.now()}`;
+        }
+        seenIds.add(uniqueId);
+
         return {
           ...u,
+          id: uniqueId,
           approval_status: status,
           auth_status: status,
           status
         };
       });
+
+      // Update local storage cache with sanitized unique IDs
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('rg_all_users', JSON.stringify(allUsers));
+        } catch (e) {}
+      }
 
       return allUsers;
     } catch (err) {
@@ -867,7 +922,7 @@ export function AuthProvider({ children }) {
       if (!userEmail) return { success: false, message: 'ইউজার ইমেইল পাওয়া যায়নি।' };
       
       const cleanEmail = userEmail.toLowerCase();
-      if (cleanEmail === 'redgreenonline2023@gmail.com') {
+      if (isChiefAdminEmail(cleanEmail)) {
         return { success: false, message: 'প্রধান ডেভলপার ও চিফ অ্যাডমিন অ্যাকাউন্ট রিমুভ করা যাবে না।' };
       }
 
@@ -1020,7 +1075,7 @@ export function AuthProvider({ children }) {
   // Update Profile Data (Self edit by Member)
   const updateProfile = (updatedData) => {
     if (!user) return;
-    const isOwner = (user.email || '').toLowerCase() === 'redgreenonline2023@gmail.com';
+    const isOwner = isChiefAdminEmail(user.email);
     const isCurrentAdmin = (user.role || '').toLowerCase().includes('admin') || (user.role || '').toLowerCase().includes('অ্যাডমিন') || isOwner;
     
     // Regular members cannot modify their own assigned role/designation

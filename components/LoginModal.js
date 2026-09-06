@@ -185,7 +185,7 @@ export default function LoginModal({ isOpen, onClose }) {
               <input
                 type="email"
                 required
-                placeholder="redgreenonline2023@gmail.com"
+                placeholder="redgreenonline1013@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-750 focus:border-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white outline-none transition"

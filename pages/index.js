@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { appwrite as supabase, uploadVoiceRecording, sendTypingStatus, sendOnlinePresence, subscribeToPresence, subscribeToTyping, isAppwriteConfigured } from '../lib/appwrite';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, isChiefAdminEmail } from '../context/AuthContext';
 import { playMessengerSound, playTaskAlarmRingtone, sendMessengerNotification, requestNotificationPermission } from '../utils/messengerSound';
 import { scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, syncAllAlarmsWithServiceWorker } from '../utils/alarmScheduler';
 import { registerPushNotifications, sendPushForMessage, sendTestPushNotification } from '../utils/pushManager';
@@ -88,7 +88,7 @@ const DEFAULT_OFFICE_GROUPS = [
     name: 'অফিস কাজের সার্বিক আপডেট',
     desc: 'অফিসের প্রতিদিনের কাজের সার্বিক আপডেট ও রিপোর্ট শেয়ারিং গ্রুপ',
     emoji: '💼',
-    createdBy: 'redgreenonline2023@gmail.com',
+    createdBy: 'redgreenonline1013@gmail.com',
     members: ['ALL'],
     createdAt: new Date().toISOString()
   }
@@ -2438,16 +2438,16 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-1.5">
-                {filteredOfficeMembers.map((usr) => {
+                {filteredOfficeMembers.map((usr, idx) => {
                   const isSelf = usr.email?.toLowerCase() === user?.email?.toLowerCase() || usr.name === username;
                   const isUserOnline = !!onlineUsers[usr.name] || isSelf;
-                  const isChiefAdmin = usr.email?.toLowerCase() === 'redgreenonline2023@gmail.com';
+                  const isChiefAdmin = isChiefAdminEmail(usr.email);
                   const userDMId = !isSelf ? getDMRoomId(username, usr.name || usr.email) : null;
                   const isCurrentDM = activeRoom === userDMId;
 
                   return (
                     <div
-                      key={usr.id || usr.email}
+                      key={usr.email ? `office_usr_${usr.email}` : (usr.id ? `office_usr_${usr.id}` : `office_usr_${idx}`)}
                       onClick={() => {
                         if (!isSelf) handleStartDirectMessage(usr);
                       }}
@@ -3163,11 +3163,11 @@ export default function Home() {
                   {registeredUsersList.filter(u => u.name !== username).length === 0 ? (
                     <p className="text-[11px] text-slate-500 text-center py-2">অন্য কোনো নিবন্ধিত সদস্য পাওয়া যায়নি</p>
                   ) : (
-                    registeredUsersList.filter(u => u.name !== username).map((usr) => {
+                    registeredUsersList.filter(u => u.name !== username).map((usr, idx) => {
                       const isSelected = selectedGroupMembers.includes(usr.name);
                       return (
                         <div
-                          key={usr.name}
+                          key={usr.email ? `group_add_${usr.email}` : (usr.id ? `group_add_${usr.id}` : `group_add_${idx}`)}
                           onClick={() => {
                             if (isSelected) {
                               setSelectedGroupMembers(selectedGroupMembers.filter(m => m !== usr.name));
@@ -3425,7 +3425,7 @@ export default function Home() {
                         const q = memberSearchQuery.toLowerCase();
                         return (usr.name || '').toLowerCase().includes(q) || (usr.role || '').toLowerCase().includes(q);
                       })
-                      .map((usr) => {
+                      .map((usr, idx) => {
                         const targetGroup = customGroups.find(g => g.id === editingGroupId);
                         const currentMembers = targetGroup?.members || [targetGroup?.createdBy || username];
                         const isMember = currentMembers.includes(usr.name);
@@ -3433,7 +3433,7 @@ export default function Home() {
 
                         return (
                           <div
-                            key={usr.name}
+                            key={usr.email ? `edit_grp_${usr.email}` : (usr.id ? `edit_grp_${usr.id}` : `edit_grp_${idx}`)}
                             className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
                               isMember
                                 ? 'bg-indigo-950/30 border-indigo-800/60'
@@ -3596,14 +3596,14 @@ export default function Home() {
                   const q = memberSearchQuery.toLowerCase();
                   return (usr.name || '').toLowerCase().includes(q) || (usr.role || '').toLowerCase().includes(q);
                 })
-                .map((usr) => {
+                .map((usr, idx) => {
                   const currentMembers = currentRoomObj.members || [currentRoomObj.createdBy || username];
                   const isMember = currentMembers.includes(usr.name);
                   const isCreator = usr.name === currentRoomObj.createdBy;
 
                   return (
                     <div
-                      key={usr.name}
+                      key={usr.email ? `room_mem_${usr.email}` : (usr.id ? `room_mem_${usr.id}` : `room_mem_${idx}`)}
                       className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
                         isMember
                           ? 'bg-blue-950/30 border-blue-800/60'
@@ -3893,11 +3893,11 @@ export default function Home() {
                   </div>
 
                   {/* Individual Registered Members */}
-                  {registeredUsersList.filter(u => u.name !== username).map((usr) => {
+                  {registeredUsersList.filter(u => u.name !== username).map((usr, idx) => {
                     const isSelected = !taskTargetMembers.includes('ALL') && taskTargetMembers.includes(usr.name);
                     return (
                       <div
-                        key={usr.name}
+                        key={usr.email ? `task_target_${usr.email}` : (usr.id ? `task_target_${usr.id}` : `task_target_${idx}`)}
                         onClick={() => {
                           if (taskTargetMembers.includes('ALL')) {
                             setTaskTargetMembers([usr.name]);

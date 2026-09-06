@@ -4,6 +4,19 @@
       "id": "usr_admin_01",
       "name": "MD SHANTO",
       "nickname": "Shanto",
+      "email": "redgreenonline1013@gmail.com",
+      "role": "অ্যাপ ডেভলপার ও চিফ অ্যাডমিন",
+      "status": "active",
+      "approval_status": "active",
+      "presence": "online",
+      "avatar_emoji": "🧑‍💻",
+      "phone": "+880 1700-000000",
+      "bio": "অফিস মেসেঞ্জারের ডেভলপার ও চিফ অ্যাডমিন।"
+    },
+    {
+      "id": "usr_admin_02",
+      "name": "MD SHANTO",
+      "nickname": "Shanto",
       "email": "redgreenonline2023@gmail.com",
       "role": "অ্যাপ ডেভলপার ও চিফ অ্যাডমিন",
       "status": "active",
@@ -68,6 +81,12 @@
     }
   ],
   "credentials": {
+    "redgreenonline1013@gmail.com": {
+      "password": "Admin@RG2026!",
+      "role": "অ্যাপ ডেভলপার ও চিফ অ্যাডমিন",
+      "status": "active",
+      "name": "MD SHANTO"
+    },
     "redgreenonline2023@gmail.com": {
       "password": "Admin@RG2026!",
       "role": "অ্যাপ ডেভলপার ও চিফ অ্যাডমিন",

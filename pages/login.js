@@ -62,7 +62,7 @@ export default function LoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          adminEmail: 'redgreenonline2023@gmail.com',
+          adminEmail: 'redgreenonline1013@gmail.com',
           targetEmail: targetEmail,
           status: 'active'
         })
@@ -287,13 +287,13 @@ export default function LoginPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     <button
                       type="button"
-                      onClick={() => handleQuickLogin('redgreenonline2023@gmail.com', 'Admin@RG2026!')}
+                      onClick={() => handleQuickLogin('redgreenonline1013@gmail.com', 'Admin@RG2026!')}
                       className="text-left px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-blue-900/30 border border-slate-800 hover:border-blue-500/50 transition group"
                     >
                       <div className="text-[11px] font-bold text-slate-200 group-hover:text-blue-300 flex items-center gap-1">
                         <span>👑 চিফ অ্যাডমিন</span>
                       </div>
-                      <div className="text-[10px] text-slate-500 font-mono">redgreenonline2023@...</div>
+                      <div className="text-[10px] text-slate-500 font-mono">redgreenonline1013@...</div>
                     </button>
 
                     <button
@@ -410,9 +410,9 @@ export default function LoginPage() {
               {/* Info Notice for Registration */}
               {activeTab === 'register' && (
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 flex items-start gap-2">
-                  <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>
-                    নিরাপত্তার স্বার্থে রেজিস্ট্রেশনের পর অ্যাডমিন কর্তৃক অনুমোদন না দেওয়া পর্যন্ত অ্যাকাউন্টে লগইন করা যাবে না।
+                    রেজিস্ট্রেশন সম্পন্ন করার সাথে সাথে আপনার অ্যাকাউন্টটি সক্রিয় হবে এবং নিজস্ব প্রোফাইল তৈরি হয়ে যাবে।
                   </span>
                 </div>
               )}
@@ -433,7 +433,7 @@ export default function LoginPage() {
                 ) : (
                   <>
                     <UserPlus className="w-4 h-4" />
-                    <span>রেজিস্ট্রেশন রিকোয়েস্ট পাঠান</span>
+                    <span>অ্যাকাউন্ট তৈরি করুন ও প্রবেশ করুন</span>
                   </>
                 )}
               </button>
@@ -441,10 +441,10 @@ export default function LoginPage() {
               {/* Admin Contact Information */}
               <div className="pt-3 border-t border-slate-800/80 text-center">
                 <p className="text-[11px] text-slate-500">
-                  চিফ অ্যাডমিন নিয়ন্ত্রণাধীন: <span className="text-slate-400 font-mono">redgreenonline2023@gmail.com</span>
+                  চিফ অ্যাডমিন নিয়ন্ত্রণাধীন: <span className="text-slate-400 font-mono">redgreenonline1013@gmail.com</span>
                 </p>
                 <p className="text-[10px] text-slate-600 mt-0.5">
-                  পাসওয়ার্ড ভুলে গেলে বা অনুমোদনের জন্য অ্যাডমিনের সাথে যোগাযোগ করুন।
+                  পাসওয়ার্ড ভুলে গেলে বা কোনো সমস্যার জন্য অ্যাডমিনের সাথে যোগাযোগ করুন।
                 </p>
               </div>
             </form>

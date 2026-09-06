@@ -6,7 +6,7 @@ import {
   subscribeToTyping,
   getOnlineUsersSnapshot
 } from '../lib/appwrite';
-import { useAuth, DEFAULT_ADMIN_ACCOUNT } from '../context/AuthContext';
+import { useAuth, DEFAULT_ADMIN_ACCOUNT, isChiefAdminEmail } from '../context/AuthContext';
 import {
   User,
   Mail,
@@ -409,7 +409,7 @@ export default function UserProfile({ onProfileUpdate }) {
   }
 
   const isViewingSelf = (authContextUser?.email || DEFAULT_ADMIN_ACCOUNT.email).toLowerCase() === activeProfile.email.toLowerCase();
-  const isChiefAdmin = activeProfile.email.toLowerCase() === 'redgreenonline2023@gmail.com';
+  const isChiefAdmin = isChiefAdminEmail(activeProfile.email);
 
   const filteredDropdownUsers = allRegisteredUsers.filter(u => {
     const q = userSearchQuery.trim().toLowerCase();

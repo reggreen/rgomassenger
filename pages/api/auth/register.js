@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       user: result.user,
       isPending: result.isPending,
       message: result.isPending
-        ? 'রেজিস্ট্রেশন সফল হয়েছে! অ্যাকাউন্টটি চিফ অ্যাডমিন (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষায় রয়েছে।'
+        ? 'রেজিস্ট্রেশন সফল হয়েছে! অ্যাকাউন্টটি চিফ অ্যাডমিন (redgreenonline1013@gmail.com) অনুমোদনের অপেক্ষায় রয়েছে।'
         : 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে।'
     });
   } catch (err) {

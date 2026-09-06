@@ -3,11 +3,13 @@ import { appwrite as supabase } from '../lib/appwrite';
 import { Bell, Calendar, Clock, Mail, Plus, X, CheckCircle, AlertTriangle, Search, Trash2, Edit3, AlertCircle, Sparkles, Volume2, ShieldCheck } from 'lucide-react';
 import { syncAllAlarmsWithServiceWorker, scheduleServiceWorkerAlarm, cancelServiceWorkerAlarm, triggerTestSWAlarm } from '../utils/alarmScheduler';
 import { requestNotificationPermission, playTaskAlarmRingtone } from '../utils/messengerSound';
+import { useAuth } from '../context/AuthContext';
 
 const CATEGORIES = ['সব ক্যাটাগরি', 'মিটিং/আলোচনা', 'ইভেন্ট নোটিশ', 'বিলিং ডেডলাইন', 'গুরুত্বপূর্ণ রিমাইন্ডার', 'অন্যান্য'];
 const PRIORITIES = ['সাধারণ', 'মাঝারি', 'জরুরি'];
 
 export default function Tasks() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,7 +30,7 @@ export default function Tasks() {
   const [priority, setPriority] = useState('মাঝারি');
   const [dueDate, setDueDate] = useState('');
   const [channels, setChannels] = useState('Both'); // 'In-app', 'Email', 'Both'
-  const [email, setEmail] = useState('redgreenonline2023@gmail.com');
+  const [email, setEmail] = useState('redgreenonline1013@gmail.com');
 
   // Trigger load
   useEffect(() => {
@@ -121,7 +123,7 @@ export default function Tasks() {
     
     setDueDate(localISOTime);
     setChannels('Both');
-    setEmail('redgreenonline2023@gmail.com');
+    setEmail(user?.email || 'redgreenonline1013@gmail.com');
     setIsModalOpen(true);
   };
 
@@ -144,7 +146,7 @@ export default function Tasks() {
     }
     
     setChannels(task.channels || 'Both');
-    setEmail(task.email || 'redgreenonline2023@gmail.com');
+    setEmail(task.email || user?.email || 'redgreenonline1013@gmail.com');
     setIsModalOpen(true);
   };
 

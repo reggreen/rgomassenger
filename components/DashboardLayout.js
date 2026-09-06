@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { appwrite as supabase } from '../lib/appwrite';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, isChiefAdminEmail } from '../context/AuthContext';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -18,7 +18,8 @@ import {
   User,
   LogOut,
   Shield,
-  Layers
+  Layers,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -95,6 +96,7 @@ export default function DashboardLayout({ children }) {
       title: '⚡ মূল ফিচারসমূহ (Core Focus)',
       items: [
         { name: 'লাইভ মেসেঞ্জার (Messenger)', href: '/', icon: MessageSquare, badge: 'Live', badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+        { name: 'মেম্বার ও গ্রুপ (Members)', href: '/members', icon: Users, badge: null },
         { name: 'টাস্ক ও অ্যালার্ম অ্যালার্ট', href: '/tasks', icon: Bell, badge: counts.pendingTasks > 0 ? `${counts.pendingTasks}` : null, badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
         { name: 'ড্যাশবোর্ড ওভারভিউ', href: '/dashboard', icon: LayoutDashboard, badge: null },
         { name: 'আমার প্রোফাইল', href: '/profile', icon: User, badge: null },
@@ -282,7 +284,7 @@ export default function DashboardLayout({ children }) {
                         <p className="text-xs font-bold text-white truncate">{user.name}</p>
                       </div>
                       <p className="text-[10px] font-mono truncate flex items-center gap-1">
-                        {user.email === 'redgreenonline2023@gmail.com' || (user.role || '').includes('অ্যাডমিন') ? (
+                        {isChiefAdminEmail(user.email) || (user.role || '').includes('অ্যাডমিন') ? (
                           <span className="text-amber-400 font-bold bg-amber-500/10 px-1 rounded border border-amber-500/20">👑 অ্যাডমিন</span>
                         ) : (user.role || '').includes('মডারেটর') ? (
                           <span className="text-indigo-300 font-bold bg-indigo-500/10 px-1 rounded border border-indigo-500/20">🛡️ মডারেটর</span>

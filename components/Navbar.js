@@ -15,7 +15,8 @@ import {
   LogIn,
   LogOut,
   ChevronDown,
-  Layers
+  Layers,
+  Users
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -69,6 +70,19 @@ export default function Navbar() {
             >
               <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
               <span>মেসেঞ্জার</span>
+            </Link>
+
+            {/* Quick Members Link */}
+            <Link
+              href="/members"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-200 ${
+                router.pathname === '/members'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400/50'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-purple-600 hover:text-white border border-slate-700/60'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-purple-400" />
+              <span>মেম্বার</span>
             </Link>
 
             {/* Quick Tasks Link */}

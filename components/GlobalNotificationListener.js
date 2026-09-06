@@ -167,7 +167,7 @@ export default function GlobalNotificationListener() {
             const newLog = {
               id: Math.random().toString(36).substr(2, 9),
               task_id: task.id,
-              recipient: task.email || 'redgreenonline2023@gmail.com',
+              recipient: task.email || 'redgreenonline1013@gmail.com',
               subject: `🔔 [নোটিফিকেশন অ্যালার্ট] ${task.title}`,
               body: `প্রিয় গ্রাহক,\nআপনার নির্ধারিত টাস্ক "${task.title}" এর সময় এসে গেছে।\n\nক্যাটাগরি: ${task.category}\nঅগ্রাধিকার: ${task.priority}\nনির্ধারিত সময়: ${new Date(task.due_date).toLocaleString('bn-BD')}\n\nবিবরণ:\n${task.description || 'কোনো অতিরিক্ত বিবরণ দেয়া হয়নি।'}\n\nধন্যবাদ,\nrgomassenger টাস্ক নোটিফিকেশন টিম`,
               sent_at: new Date().toISOString()

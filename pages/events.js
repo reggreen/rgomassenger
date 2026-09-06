@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { appwrite as supabase } from '../lib/appwrite';
 import { Calendar, MapPin, Users, Plus, X, Sparkles, Clock, ArrowRight, Edit3, Trash2, AlertTriangle, Bell, CheckSquare, Image as ImageIcon } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
   return new Promise((resolve, reject) => {
@@ -38,6 +39,7 @@ const resizeImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.7) => {
 };
 
 export default function Events() {
+  const { user } = useAuth();
   const [eventsList, setEventsList] = useState([]);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [userRsvps, setUserRsvps] = useState({}); // Tracking local RSVPs in session
@@ -239,7 +241,7 @@ export default function Events() {
         priority: evt.priority || 'মাঝারি',
         due_date: evt.date,
         channels: 'Both',
-        email: 'redgreenonline2023@gmail.com',
+        email: user?.email || 'redgreenonline1013@gmail.com',
         status: 'Pending',
         alerted: false
       };

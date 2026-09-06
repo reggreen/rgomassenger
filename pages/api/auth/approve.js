@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     }
 
     // Security check: Must be Chief Admin or have admin credentials
-    if (cleanAdmin !== 'redgreenonline2023@gmail.com') {
+    if (cleanAdmin !== 'redgreenonline1013@gmail.com' && cleanAdmin !== 'redgreenonline2023@gmail.com') {
       // Still allow if valid admin
     }
 

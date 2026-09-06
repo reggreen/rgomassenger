@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useAuth, DEFAULT_ADMIN_ACCOUNT } from '../context/AuthContext';
+import { useAuth, DEFAULT_ADMIN_ACCOUNT, isChiefAdminEmail } from '../context/AuthContext';
 import { appwrite as supabase } from '../lib/appwrite';
 import {
   Shield,
@@ -45,7 +45,7 @@ const DEFAULT_OFFICE_GROUPS = [
     name: 'অফিস কাজের সার্বিক আপডেট',
     desc: 'অফিসের প্রতিদিনের কাজের সার্বিক আপডেট ও রিপোর্ট শেয়ারিং গ্রুপ',
     emoji: '💼',
-    createdBy: 'redgreenonline2023@gmail.com',
+    createdBy: 'redgreenonline1013@gmail.com',
     members: ['ALL'],
     createdAt: new Date().toISOString()
   }
@@ -552,7 +552,7 @@ export default function AdminDashboard() {
   const onlineCount = usersList.filter(u => u.presence === 'online').length;
   const pendingUsers = usersList.filter(
     u => (u.approval_status === 'pending_approval' || u.auth_status === 'pending_approval' || u.status === 'pending_approval') &&
-         (u.email || '').toLowerCase() !== 'redgreenonline2023@gmail.com'
+         !isChiefAdminEmail(u.email)
   );
 
   return (
@@ -658,7 +658,7 @@ export default function AdminDashboard() {
               চিফ অ্যাডমিন নিয়ন্ত্রিত (হার্ড সিকিউরিটি)
             </span>
             <span className="text-slate-500 font-mono text-[11px] hidden sm:inline">
-              redgreenonline2023@gmail.com
+              redgreenonline1013@gmail.com
             </span>
           </div>
 
@@ -881,7 +881,7 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody className="divide-y divide-slate-800/80 text-xs">
                     {filteredUsers.map((usr) => {
-                      const isChiefAdmin = (usr.email || '').toLowerCase() === 'redgreenonline2023@gmail.com';
+                      const isChiefAdmin = isChiefAdminEmail(usr.email);
                       const isSelf = user?.email?.toLowerCase() === usr.email?.toLowerCase();
 
                       return (
@@ -1180,9 +1180,9 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingUsers.map((pendingUsr) => (
+              {pendingUsers.map((pendingUsr, idx) => (
                 <div
-                  key={pendingUsr.id || pendingUsr.email}
+                  key={pendingUsr.email ? `pending_${pendingUsr.email}` : (pendingUsr.id ? `pending_${pendingUsr.id}` : `pending_${idx}`)}
                   className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4 hover:border-amber-500/50 transition shadow-lg relative overflow-hidden"
                 >
                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-bl-full pointer-events-none" />
@@ -1534,7 +1534,7 @@ export default function AdminDashboard() {
 
             <div className="pt-2 flex items-center justify-between border-t border-slate-800">
               {/* Remove User Trigger */}
-              {(inspectUser.email || '').toLowerCase() !== 'redgreenonline2023@gmail.com' ? (
+              {!isChiefAdminEmail(inspectUser.email) ? (
                 <button
                   onClick={() => {
                     const target = inspectUser;

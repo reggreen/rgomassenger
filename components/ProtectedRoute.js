@@ -115,7 +115,7 @@ export default function ProtectedRoute({ children, requiredRole = 'member', fall
                 <span>পারমিশন অনুমোদন:</span>
               </p>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                এই সেকশনে প্রবেশের জন্য আপনার অ্যাকাউন্টে অ্যাডমিন পারমিশন প্রয়োজন। পারমিশন আপগ্রেডের জন্য চিফ অ্যাডমিন (<span className="text-slate-300 font-mono">redgreenonline2023@gmail.com</span>) এর সাথে যোগাযোগ করুন।
+                এই সেকশনে প্রবেশের জন্য আপনার অ্যাকাউন্টে অ্যাডমিন পারমিশন প্রয়োজন। পারমিশন আপগ্রেডের জন্য চিফ অ্যাডমিন (<span className="text-slate-300 font-mono">redgreenonline1013@gmail.com</span>) এর সাথে যোগাযোগ করুন।
               </p>
             </div>
 
