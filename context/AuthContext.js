@@ -3,25 +3,25 @@ import { account, ID, isAppwriteConfigured } from '../lib/appwrite';
 
 const AuthContext = createContext();
 
-export const CHIEF_ADMIN_EMAIL = 'redgreenonline1013@gmail.com';
+export const CHIEF_ADMIN_EMAIL = 'redgreenonline2023@gmail.com';
 export const LEGACY_ADMIN_EMAIL = 'redgreenonline2023@gmail.com';
 
 export const isChiefAdminEmail = (email) => {
   if (!email) return false;
   const clean = email.toLowerCase().trim();
-  return clean === CHIEF_ADMIN_EMAIL || clean === LEGACY_ADMIN_EMAIL;
+  return clean === CHIEF_ADMIN_EMAIL;
 };
 
 export const DEFAULT_ADMIN_ACCOUNT = {
   id: 'usr_admin_01',
   name: 'MD SHANTO',
   nickname: 'Shanto',
-  email: 'redgreenonline1013@gmail.com',
+  email: 'redgreenonline2023@gmail.com',
   role: 'অ্যাপ ডেভলপার ও চিফ অ্যাডমিন',
   status: 'সিস্টেম মেইন্টেন্যান্স ও অ্যাক্টিভ ⚡',
   presence: 'online',
   avatar_emoji: '🧑‍💻',
-  phone: '+880 1700-000000',
+  phone: '+880 1743762990',
   bio: 'অফিস মেসেঞ্জারের ডেভলপার ও চিফ অ্যাডমিন।'
 };
 
@@ -34,13 +34,12 @@ export const LEGACY_ADMIN_ACCOUNT = {
   status: 'সিস্টেম মেইন্টেন্যান্স ও অ্যাক্টিভ ⚡',
   presence: 'online',
   avatar_emoji: '🧑‍💻',
-  phone: '+880 1700-000000',
+  phone: '+880 1743762990',
   bio: 'অফিস মেসেঞ্জারের ডেভলপার ও চিফ অ্যাডমিন।'
 };
 
 export const DEFAULT_REGISTERED_USERS = [
   DEFAULT_ADMIN_ACCOUNT,
-  LEGACY_ADMIN_ACCOUNT,
   {
     id: 'usr_mem_tanveer',
     name: 'তানভীর আহমেদ',
@@ -473,7 +472,7 @@ export function AuthProvider({ children }) {
           return { 
             success: false, 
             pendingApproval: true,
-            message: 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline1013@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।' 
+            message: 'আপনার অ্যাকাউন্টটি এখনও চিফ অ্যাডমিনের (redgreenonline2023@gmail.com) অনুমোদনের অপেক্ষমাণ রয়েছে। অ্যাডমিন অনুমোদন দিলে আপনি প্রবেশ করতে পারবেন।' 
           };
         }
 
@@ -892,9 +891,7 @@ export function AuthProvider({ children }) {
         const status = u.approval_status || u.status || userCred?.status || (isChiefAdminEmail(cleanEmail) ? 'active' : 'active');
         
         let uniqueId = u.id;
-        if (cleanEmail === 'redgreenonline2023@gmail.com' && (!uniqueId || uniqueId === 'usr_admin_01')) {
-          uniqueId = 'usr_admin_02';
-        } else if (cleanEmail === 'redgreenonline1013@gmail.com') {
+        if (cleanEmail === 'redgreenonline2023@gmail.com') {
           uniqueId = 'usr_admin_01';
         }
         
