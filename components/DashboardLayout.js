@@ -91,6 +91,8 @@ export default function DashboardLayout({ children }) {
     }
   };
 
+  const isUserAdmin = user && (isChiefAdminEmail(user.email) || user.email === 'redgreenonline1013@gmail.com' || user.email === 'redgreenonline2023@gmail.com');
+
   const navSections = [
     {
       title: '⚡ মূল ফিচারসমূহ (Core Focus)',
@@ -99,7 +101,7 @@ export default function DashboardLayout({ children }) {
         { name: 'মেম্বার ও গ্রুপ (Members)', href: '/members', icon: Users, badge: null },
         { name: 'টাস্ক ও অ্যালার্ম অ্যালার্ট', href: '/tasks', icon: Bell, badge: counts.pendingTasks > 0 ? `${counts.pendingTasks}` : null, badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
         { name: 'ড্যাশবোর্ড ওভারভিউ', href: '/dashboard', icon: LayoutDashboard, badge: null },
-        { name: 'আমার প্রোফাইল', href: '/profile', icon: User, badge: null },
+        { name: 'অফিস মেম্বার', href: '/profile', icon: User, badge: null },
       ]
     },
     {
@@ -111,18 +113,20 @@ export default function DashboardLayout({ children }) {
         { name: 'হেল্পডেস্ক সাপোর্ট', href: '/support', icon: HelpCircle, badge: counts.openTickets > 0 ? `${counts.openTickets}` : null, badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
       ]
     },
-    {
-      title: '🔐 এডমিনিস্ট্রেশন & গার্ড',
-      items: [
-        { name: 'অ্যাডমিন প্যানেল', href: '/admin', icon: Shield, badge: 'গার্ড', badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
-      ]
-    },
-    {
-      title: '👤 অ্যাকাউন্ট',
-      items: [
-        { name: 'মাই প্রোফাইল', href: '/profile', icon: User, badge: null },
-      ]
-    }
+    ...(isUserAdmin ? [
+      {
+        title: '🔐 এডমিনিস্ট্রেশন & গার্ড',
+        items: [
+          { name: 'অ্যাডমিন প্যানেল', href: '/admin', icon: Shield, badge: 'গার্ড', badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+        ]
+      },
+      {
+        title: '👤 অ্যাকাউন্ট',
+        items: [
+          { name: 'মাই প্রোফাইল', href: '/profile', icon: User, badge: null },
+        ]
+      }
+    ] : [])
   ];
 
   return (
